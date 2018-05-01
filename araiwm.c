@@ -1,46 +1,22 @@
 #include <xcb/xcb.h>
-#include <xcb/xcb_atom.h>
 #include <xcb/xcb_ewmh.h>
 #include <xcb/xcb_icccm.h>
+#include <xcb/xcb_keysyms.h>
 #include <X11/keysym.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <string.h>
 #include "config.h"
 
 enum { FOCUS, UNFOCUS };
 enum { CENTER, CORNER };
-enum { wm_protocols, wm_delete_window, wm_count };
 
 static xcb_connection_t		*connection;
 static xcb_ewmh_connection_t 	*ewmh;
 static xcb_screen_t		*screen;
 static xcb_window_t		focuswindow;
+static xcb_atom_t 		atoms[2];
 static xcb_window_t		carrywindow;
 static uint32_t			carrybutton;
-static char *WM_ATOM_NAME[] = { "WM_PROTOCOLS", "WM_DELETE_WINDOW" };
-static xcb_atom_t wm_atoms[wm_count];
-
-static void arai_focus(xcb_window_t window, int mode);
-static void arai_get_atoms(char **names, xcb_atom_t *atoms, unsigned int count);
-static void arai_center(xcb_window_t window);
-
-static void
-arai_cleanup(void)
-{
-	xcb_ungrab_button(connection,
-			XCB_BUTTON_INDEX_ANY,
-			screen->root,
-			XCB_MOD_MASK_ANY);
-	xcb_ungrab_key(connection,
-			XCB_GRAB_ANY,
-			screen->root,
-			XCB_MOD_MASK_ANY);
-	xcb_ewmh_connection_wipe(ewmh);
-	xcb_flush(connection);
-	free(ewmh);
-	xcb_disconnect(connection);
-}
 
 static void
 arai_init(void)
@@ -52,11 +28,6 @@ arai_init(void)
 	};
 	connection = xcb_connect(NULL, NULL);
 	screen = xcb_setup_roots_iterator(xcb_get_setup(connection)).data;
-	ewmh = calloc(1, sizeof(xcb_ewmh_connection_t));
-	xcb_intern_atom_cookie_t *cookie = xcb_ewmh_init_atoms(connection, ewmh);
-	xcb_ewmh_init_atoms_replies(ewmh,
-			cookie,
-			(void *)0);
 	focuswindow = screen->root;
 	xcb_change_window_attributes_checked(connection,
 			screen->root,
@@ -67,16 +38,25 @@ arai_init(void)
 static void
 arai_setup_ewmh(void)
 {
-	xcb_atom_t net_atoms[] = {
-		ewmh->_NET_WM_WINDOW_TYPE_DOCK,
-		ewmh->_NET_WM_WINDOW_TYPE_DESKTOP,
-		ewmh->_NET_WM_WINDOW_TYPE_TOOLBAR,
+	ewmh = calloc(1, sizeof(xcb_ewmh_connection_t));
+	xcb_ewmh_init_atoms_replies(ewmh,
+			xcb_ewmh_init_atoms(connection, ewmh),
+			(void *)0);
+}
+
+static void
+arai_setup_icccm(void)
+{
+	xcb_intern_atom_cookie_t cookies[] = {
+		xcb_intern_atom(connection, 0, 12, "WM_PROTOCOLS"),
+		xcb_intern_atom(connection, 0, 16, "WM_DELETE_WINDOW")
 	};
-	xcb_ewmh_set_supported(ewmh, 0, sizeof(net_atoms)/sizeof(*net_atoms), net_atoms);
-	xcb_ewmh_set_wm_pid(ewmh, screen->root, getpid());
-	xcb_ewmh_set_wm_name(ewmh, screen->root, 6, "araiwm");
-	xcb_ewmh_set_current_desktop(ewmh, 0, 0);
-	arai_get_atoms(WM_ATOM_NAME, wm_atoms, wm_count); 
+	xcb_intern_atom_reply_t *reply;
+	for (unsigned int i = 0; i < 2; i++) {
+		reply = xcb_intern_atom_reply(connection, cookies[i], NULL);
+		atoms[i] = reply->atom;
+		free(reply);
+	}
 }
 
 static void
@@ -113,20 +93,6 @@ arai_keygrab(void)
 	xcb_key_symbols_free(keysyms);
 }
 
-static void
-arai_get_atoms(char **names, xcb_atom_t *atoms, unsigned int count)
-{
-	xcb_intern_atom_cookie_t cookies[count];
-	xcb_intern_atom_reply_t *reply;
-	for (unsigned int i = 0; i < count; i++)
-		cookies[i] = xcb_intern_atom(connection, 0, strlen(names[i]), names[i]);
-	for (unsigned int i = 0; i < count; i++) {
-		reply = xcb_intern_atom_reply(connection, cookies[i], NULL);
-		atoms[i] = reply->atom;
-		free(reply);
-	}
-}
-
 static xcb_keysym_t
 arai_get_keysym(xcb_keycode_t keycode)
 {
@@ -155,24 +121,6 @@ arai_check_managed(xcb_window_t window)
 	return 1;
 }
 
-
-static void
-arai_wrap(xcb_window_t window)
-{
-	uint32_t values[] = { XCB_EVENT_MASK_ENTER_WINDOW, XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY };
-	xcb_change_window_attributes(connection,
-			window,
-			XCB_CW_EVENT_MASK,
-			values);
-	values[0] = BORDER;
-	xcb_configure_window(connection,
-			window,
-			XCB_CONFIG_WINDOW_BORDER_WIDTH,
-			values);
-	arai_center(window);
-	arai_focus(window, FOCUS);
-}
-
 static void
 arai_focus(xcb_window_t window, int mode)
 {
@@ -191,6 +139,23 @@ arai_focus(xcb_window_t window, int mode)
 			focuswindow = window;
 		}
 	}
+}
+
+static void
+arai_wrap(xcb_window_t window)
+{
+	uint32_t values[] = { XCB_EVENT_MASK_ENTER_WINDOW, XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY };
+	xcb_change_window_attributes(connection,
+			window,
+			XCB_CW_EVENT_MASK,
+			values);
+	values[0] = BORDER;
+	xcb_configure_window(connection,
+			window,
+			XCB_CONFIG_WINDOW_BORDER_WIDTH,
+			values);
+	arai_center(window);
+	arai_focus(window, FOCUS);
 }
 
 static void
@@ -232,7 +197,7 @@ arai_resize(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geomet
 }
 
 static void
-arai_warp_pointer(xcb_window_t window, int MODE)
+arai_warp_pointer(xcb_window_t window, int mode)
 {
 	xcb_get_geometry_reply_t *geometry = xcb_get_geometry_reply(connection,
 			xcb_get_geometry(connection, window),
@@ -241,8 +206,8 @@ arai_warp_pointer(xcb_window_t window, int MODE)
 			XCB_NONE,
 			window,
 			0, 0, 0, 0,
-			MODE ? geometry->width : geometry->width/2,
-			MODE ? geometry->height : geometry->height/2);
+			mode ? geometry->width + BORDER : geometry->width/2,
+			mode ? geometry->height + BORDER : geometry->height/2);
 	free(geometry);
 }
 
@@ -304,7 +269,7 @@ arai_center(xcb_window_t window)
 }
 
 static void
-arai_fullscreen(xcb_window_t window)
+arai_max(xcb_window_t window)
 {
 	const uint32_t values[] = {
 		GAP,
@@ -322,6 +287,24 @@ arai_fullscreen(xcb_window_t window)
 	arai_warp_pointer(window, CENTER);
 }
 
+static void
+arai_fullscreen(xcb_window_t window)
+{
+	const uint32_t values[] = {
+		0,
+		0,
+		screen->width_in_pixels - BORDER * 2,
+		screen->height_in_pixels - BORDER * 2,
+		XCB_STACK_MODE_ABOVE
+	};
+	xcb_configure_window(connection,
+			window,
+			XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y |
+			XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT |
+			XCB_CONFIG_WINDOW_STACK_MODE,
+			values);
+	arai_warp_pointer(window, CENTER);
+}
 static void
 arai_destroy_notify(xcb_generic_event_t *event)
 {
@@ -355,8 +338,8 @@ arai_delete(xcb_window_t window)
 	event.window = window;
 	event.format = 32;
 	event.sequence = 0;
-	event.type = wm_atoms[wm_protocols];
-	event.data.data32[0] = wm_atoms[wm_delete_window];
+	event.type = atoms[0];
+	event.data.data32[0] = atoms[1];
 	event.data.data32[1] = XCB_CURRENT_TIME;
 	xcb_send_event(connection,
 			0,
@@ -376,7 +359,7 @@ arai_kill(xcb_window_t window)
 				&protocols,
 				NULL))
 		for (int i = 0; i < protocols.atoms_len; i++)
-			if (protocols.atoms[i] == wm_atoms[wm_delete_window]) {
+			if (protocols.atoms[i] == atoms[1]) {
 				arai_delete(window);
 				xcb_icccm_get_wm_protocols_reply_wipe(&protocols);
 				return;
@@ -484,11 +467,29 @@ arai_dive(void)
 	}
 }
 
+static void
+arai_cleanup(void)
+{
+	xcb_ungrab_button(connection,
+			XCB_BUTTON_INDEX_ANY,
+			screen->root,
+			XCB_MOD_MASK_ANY);
+	xcb_ungrab_key(connection,
+			XCB_GRAB_ANY,
+			screen->root,
+			XCB_MOD_MASK_ANY);
+	xcb_ewmh_connection_wipe(ewmh);
+	xcb_flush(connection);
+	free(ewmh);
+	xcb_disconnect(connection);
+}
+
 int
 main(void)
 {
 	arai_init();
 	arai_setup_ewmh();
+	arai_setup_icccm();
 	arai_buttongrab();
 	arai_keygrab();
 	arai_dive();
