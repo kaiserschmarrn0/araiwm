@@ -3,7 +3,7 @@
 #define MOD		XCB_MOD_MASK_4
 #define BORDER		4
 #define GAP		6
-#define TOP		0
+#define TOP		24
 #define BOT		0
 #define FOCUSCOLOR	0xFFFFFF
 #define UNFOCUSCOLOR	0xE4D1B0

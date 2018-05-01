@@ -291,10 +291,10 @@ static void
 arai_fullscreen(xcb_window_t window)
 {
 	const uint32_t values[] = {
-		0,
+		TOP,
 		0,
 		screen->width_in_pixels - BORDER * 2,
-		screen->height_in_pixels - BORDER * 2,
+		screen->height_in_pixels - BORDER * 2 - BOT,
 		XCB_STACK_MODE_ABOVE
 	};
 	xcb_configure_window(connection,
