@@ -15,6 +15,8 @@ static xcb_ewmh_connection_t 	*ewmh;
 static xcb_screen_t		*screen;
 static xcb_window_t		focuswindow;
 static xcb_atom_t 		atoms[2];
+static xcb_window_t 		windowlist[20];
+static uint32_t			windowcount = 0;
 static xcb_window_t		carrywindow;
 static uint32_t			carrybutton;
 
@@ -110,12 +112,12 @@ arai_check_managed(xcb_window_t window)
 				xcb_ewmh_get_wm_window_type(ewmh, window),
 				&type, NULL)) {
 		for (unsigned int i = 0; i < type.atoms_len; i++)
-			if (type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_DOCK ||
-					type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_TOOLBAR ||
-					type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_DESKTOP) {
-				xcb_ewmh_get_atoms_reply_wipe(&type);
-				return 0;
-			}
+				if (type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_DOCK ||
+						type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_TOOLBAR ||
+						type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_DESKTOP) {
+					xcb_ewmh_get_atoms_reply_wipe(&type);
+					return 0;
+				}
 		xcb_ewmh_get_atoms_reply_wipe(&type);
 	}
 	return 1;
@@ -291,10 +293,10 @@ static void
 arai_fullscreen(xcb_window_t window)
 {
 	const uint32_t values[] = {
-		TOP,
 		0,
+		TOP,
 		screen->width_in_pixels - BORDER * 2,
-		screen->height_in_pixels - BORDER * 2 - BOT,
+		screen->height_in_pixels - BORDER * 2 - BOT - TOP,
 		XCB_STACK_MODE_ABOVE
 	};
 	xcb_configure_window(connection,
@@ -305,6 +307,28 @@ arai_fullscreen(xcb_window_t window)
 			values);
 	arai_warp_pointer(window, CENTER);
 }
+
+static void
+arai_cycle(xcb_window_t window)
+{
+	xcb_window_t carry = window; //LOLOLOL
+	const uint32_t values[] = { XCB_STACK_MODE_ABOVE };
+	xcb_query_tree_reply_t *reply = xcb_query_tree_reply(connection,
+			xcb_query_tree(connection, screen->root),
+			NULL);
+	xcb_window_t *children = xcb_query_tree_children(reply);
+	for (unsigned int i = 1; i < xcb_query_tree_children_length(reply); i++)	
+		if (window != screen->root && arai_check_managed(children[i])) {
+			xcb_configure_window(connection,
+					children[i],
+					XCB_CONFIG_WINDOW_STACK_MODE,
+					values);
+			arai_warp_pointer(children[i], CENTER);
+			break;
+		}
+	free(reply);
+}
+
 static void
 arai_destroy_notify(xcb_generic_event_t *event)
 {
@@ -326,6 +350,8 @@ arai_map_notify(xcb_generic_event_t *event)
 	xcb_map_notify_event_t *e = (xcb_map_notify_event_t *)event;
 	if (!e->override_redirect && arai_check_managed(e->window)) {
 		arai_wrap(e->window);
+		windowlist[windowcount] = e->window;
+		windowcount++;
 	}
 	xcb_map_window(connection, e->window);
 }
@@ -426,8 +452,7 @@ arai_motion_notify(xcb_generic_event_t *event)
 }
 
 static void
-arai_button_release(xcb_generic_event_t *event)
-{
+arai_button_release(xcb_generic_event_t *event){
 	arai_focus(carrywindow, FOCUS);
 	xcb_ungrab_pointer(connection, XCB_CURRENT_TIME);
 }

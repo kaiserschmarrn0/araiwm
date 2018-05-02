@@ -15,6 +15,7 @@ static void arai_tile_right(xcb_window_t window);
 static void arai_cycle(xcb_window_t window);
 static void arai_max(xcb_window_t window);
 static void arai_fullscreen(xcb_window_t window);
+static void arai_cycle(xcb_window_t window);
 
 arai_button buttons[] = {
 	{ MOD, 1 },
@@ -27,5 +28,6 @@ arai_key keys[] = {
 	{ MOD, XK_Left, arai_tile_left },
 	{ MOD, XK_Right, arai_tile_right },
 	{ MOD, XK_f, arai_max },
-	{ MOD, XK_y, arai_fullscreen }
+	{ MOD, XK_y, arai_fullscreen },
+	{ MOD, XK_Tab, arai_cycle }
 };
