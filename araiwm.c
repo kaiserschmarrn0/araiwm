@@ -311,7 +311,6 @@ arai_fullscreen(xcb_window_t window)
 static void
 arai_cycle(xcb_window_t window)
 {
-	xcb_window_t carry = window; //LOLOLOL
 	const uint32_t values[] = { XCB_STACK_MODE_ABOVE };
 	xcb_query_tree_reply_t *reply = xcb_query_tree_reply(connection,
 			xcb_query_tree(connection, screen->root),
