@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include "config.h"
+#include <stdio.h>
 
 enum { FOCUS, UNFOCUS };
 enum { CENTER, CORNER };
@@ -15,8 +16,6 @@ static xcb_ewmh_connection_t 	*ewmh;
 static xcb_screen_t		*screen;
 static xcb_window_t		focuswindow;
 static xcb_atom_t 		atoms[2];
-static xcb_window_t 		windowlist[20];
-static uint32_t			windowcount = 0;
 static xcb_window_t		carrywindow;
 static uint32_t			carrybutton;
 
@@ -190,7 +189,7 @@ arai_resize(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geomet
 		(pointer->root_x - geometry->x - 2 * BORDER + 1),
 		(pointer->root_y < geometry->y + 64) ?
 		64 - 2 * BORDER :
-		(pointer->root_y - geometry->y - 2 * BORDER + 1 - BOT)
+		(pointer->root_y - geometry->y - 2 * BORDER + 1)
 	};
 	xcb_configure_window(connection,
 			window,
@@ -316,7 +315,7 @@ arai_cycle(xcb_window_t window)
 			xcb_query_tree(connection, screen->root),
 			NULL);
 	xcb_window_t *children = xcb_query_tree_children(reply);
-	for (unsigned int i = 1; i < xcb_query_tree_children_length(reply); i++)	
+	for (unsigned int i = 1; i < xcb_query_tree_children_length(reply); i++)
 		if (window != screen->root && arai_check_managed(children[i])) {
 			xcb_configure_window(connection,
 					children[i],
@@ -349,8 +348,6 @@ arai_map_notify(xcb_generic_event_t *event)
 	xcb_map_notify_event_t *e = (xcb_map_notify_event_t *)event;
 	if (!e->override_redirect && arai_check_managed(e->window)) {
 		arai_wrap(e->window);
-		windowlist[windowcount] = e->window;
-		windowcount++;
 	}
 	xcb_map_window(connection, e->window);
 }
@@ -376,10 +373,11 @@ arai_delete(xcb_window_t window)
 static void
 arai_kill(xcb_window_t window)
 {
+	focuswindow = screen->root;
 	xcb_icccm_get_wm_protocols_reply_t protocols;
 	if (xcb_icccm_get_wm_protocols_reply(connection,
 				xcb_icccm_get_wm_protocols_unchecked(connection,
-					focuswindow,
+					window,
 					ewmh->WM_PROTOCOLS),
 				&protocols,
 				NULL))
@@ -389,16 +387,18 @@ arai_kill(xcb_window_t window)
 				xcb_icccm_get_wm_protocols_reply_wipe(&protocols);
 				return;
 			}
-	xcb_kill_client(connection, focuswindow);
+	xcb_kill_client(connection, window);
 }
 
 static void
 arai_key_press(xcb_generic_event_t *event)
 {
+	if (focuswindow == screen->root || !arai_check_managed(focuswindow))
+		return;
 	xcb_key_press_event_t *e = (xcb_key_press_event_t *)event;
 	xcb_keysym_t keysym = arai_get_keysym(e->detail);
 	for (int i = 0; i < sizeof(keys)/sizeof(*keys); i++)
-		if (arai_check_managed(focuswindow) && keysym == keys[i].key)
+		if (keysym == keys[i].key)
 			keys[i].function(focuswindow);
 }
 
