@@ -165,10 +165,10 @@ arai_move(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geometry
 	uint32_t values[] = {
 		(pointer->root_x + geometry->width / 2 + BORDER * 2 > screen->width_in_pixels) ?
 		(screen->width_in_pixels - geometry->width - BORDER * 2) :
-		(pointer->root_x - geometry->width / 2),
+		(pointer->root_x - geometry->width / 2 - BORDER),
 		(pointer->root_y + geometry->height / 2 + BORDER * 2 + BOT > screen->height_in_pixels) ?
 		(screen->height_in_pixels - geometry->height - BORDER * 2 - BOT) :
-		(pointer->root_y - geometry->height / 2)
+		(pointer->root_y - geometry->height / 2 - BORDER)
 	};
 	if (pointer->root_x < geometry->width / 2)
 		values[0] = 0;
