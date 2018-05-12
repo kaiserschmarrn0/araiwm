@@ -252,6 +252,38 @@ arai_tile_right(xcb_window_t window)
 }
 
 static void
+arai_tile_up(xcb_window_t window)
+{
+	const uint32_t values[] = {
+		GAP + TOP,
+		(screen->height_in_pixels - TOP - BOT) / 2 - GAP * 1.5 - BORDER * 2,
+		XCB_STACK_MODE_ABOVE
+	};
+	xcb_configure_window(connection,
+			window,
+			XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_HEIGHT |
+			XCB_CONFIG_WINDOW_STACK_MODE,
+			values);
+	arai_warp_pointer(window, CENTER);
+}
+
+static void
+arai_tile_down(xcb_window_t window)
+{
+	const uint32_t values[] = {
+		(screen->height_in_pixels - TOP - BOT) / 2 + GAP / 2 + TOP,
+		(screen->height_in_pixels - TOP - BOT) / 2 - GAP * 1.5 - BORDER * 2,
+		XCB_STACK_MODE_ABOVE
+	};
+	xcb_configure_window(connection,
+			window,
+			XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_HEIGHT |
+			XCB_CONFIG_WINDOW_STACK_MODE,
+			values);
+	arai_warp_pointer(window, CENTER);
+}
+
+static void
 arai_center(xcb_window_t window)
 {
 	xcb_get_geometry_reply_t *geometry = xcb_get_geometry_reply(connection,
