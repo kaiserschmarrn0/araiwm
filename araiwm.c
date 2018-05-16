@@ -183,7 +183,7 @@ arai_move(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geometry
 static void
 arai_resize(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geometry, xcb_window_t window)
 {
-	const uint32_t values[2] = {
+	uint32_t values[2] = {
 		(pointer->root_x < geometry->x + 64) ?
 		64 - 2 * BORDER :
 		(pointer->root_x - geometry->x - 2 * BORDER + 1),
@@ -191,6 +191,8 @@ arai_resize(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geomet
 		64 - 2 * BORDER :
 		(pointer->root_y - geometry->y - 2 * BORDER + 1)
 	};
+	if (pointer->root_y > screen->height_in_pixels - BOT)
+		values[1] = screen->height_in_pixels - geometry->y - BORDER * 2 - BOT;
 	xcb_configure_window(connection,
 			window,
 			XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT,
