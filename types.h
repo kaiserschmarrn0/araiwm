@@ -8,3 +8,8 @@ typedef struct {
 	uint16_t mod;
 	uint16_t button;
 } arai_button;
+
+typedef struct client {
+	xcb_window_t id;
+	struct client* next;
+} client;
