@@ -16,6 +16,8 @@ static xcb_ewmh_connection_t 	*ewmh;
 static xcb_screen_t		*screen;
 static xcb_window_t		focuswindow;
 static xcb_atom_t 		atoms[2];
+static client			*wslist[NUM_WS];
+static int			curws = 0;
 
 static void
 arai_init(void)
@@ -92,6 +94,53 @@ arai_keygrab(void)
 	xcb_key_symbols_free(keysyms);
 }
 
+static void
+arai_print_clients() {
+	client *current =wslist[curws];
+	while (current != NULL) {
+		printf("%d ", current->id);
+		current = current->next;
+	}
+	printf("\n");
+}
+
+static void
+arai_add_client(xcb_window_t window)
+{
+	client *temp = wslist[curws];
+	wslist[curws] = malloc(sizeof(client));
+	wslist[curws]->next = temp;
+	wslist[curws]->id = window;
+}
+
+static void
+arai_remove_client(xcb_window_t window)
+{
+	client *current = wslist[curws], *prev = NULL;
+	while (current->id != window) {
+		prev = current;
+		current = current->next;
+	}
+	if (current->next && prev) prev->next = current->next;
+	else if (prev) prev->next = NULL;
+	else if (current->next) wslist[curws] = current->next;
+	else wslist[curws] = NULL;
+	free(current);
+}
+
+static void
+arai_free_list() {
+	client *current, *temp;
+	if (current = wslist[curws]) {
+		wslist[curws] = NULL;
+		while (current) {
+			temp = current->next;
+			free(current);
+			current = temp;
+		}
+	}
+}
+
 static xcb_keysym_t
 arai_get_keysym(xcb_keycode_t keycode)
 {
@@ -154,6 +203,8 @@ arai_wrap(xcb_window_t window)
 			values);
 	arai_center(window);
 	arai_focus(window, FOCUS);
+	arai_add_client(window);
+	arai_print_clients();
 }
 
 static void
@@ -226,6 +277,22 @@ arai_center(xcb_window_t window)
 }
 
 static void
+arai_cycle(xcb_window_t window)
+{
+	const uint32_t values[] = { XCB_STACK_MODE_ABOVE };
+	client *current = wslist[curws];
+	while (current && current->id != window) current = current->next;
+	if (!current) return;
+	if (current->next) arai_focus(current->next->id, FOCUS);
+	else arai_focus(wslist[curws]->id, FOCUS);
+	xcb_configure_window(connection,
+			focuswindow,
+			XCB_CONFIG_WINDOW_STACK_MODE,
+			values);
+	arai_warp_pointer(focuswindow, CENTER);
+}
+
+static void
 arai_delete(xcb_window_t window)
 {
 	xcb_client_message_event_t event;
@@ -247,21 +314,22 @@ static void
 arai_kill(xcb_window_t window)
 {
 	focuswindow = screen->root;
+	arai_remove_client(window);
 	xcb_icccm_get_wm_protocols_reply_t protocols;
-	if (!xcb_icccm_get_wm_protocols_reply(connection,
+	if (xcb_icccm_get_wm_protocols_reply(connection,
 				xcb_icccm_get_wm_protocols_unchecked(connection,
 					window,
 					ewmh->WM_PROTOCOLS),
 				&protocols,
-				NULL)) {
-		xcb_kill_client(connection, window);
-		return;
-	}
-	for (int i = 0; i < protocols.atoms_len; i++)
-		if (protocols.atoms[i] == atoms[1]) {
-			arai_delete(window);
-			xcb_icccm_get_wm_protocols_reply_wipe(&protocols);
-		}
+				NULL))
+		for (int i = 0; i < protocols.atoms_len; i++)
+			if (protocols.atoms[i] == atoms[1]) {
+				arai_delete(window);
+				xcb_icccm_get_wm_protocols_reply_wipe(&protocols);
+				return;
+			}
+	xcb_kill_client(connection, window);
+	arai_print_clients(); //debug
 }
 
 static void
@@ -363,6 +431,9 @@ arai_dive(void)
 static void
 arai_cleanup(void)
 {
+	arai_print_clients(); //debug
+	arai_free_list();
+	arai_print_clients(); //debug
 	xcb_ungrab_button(connection,
 			XCB_BUTTON_INDEX_ANY,
 			screen->root,
