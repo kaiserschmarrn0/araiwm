@@ -10,6 +10,7 @@
 
 enum { FOCUS, UNFOCUS };
 enum { CENTER, CORNER };
+enum { RIGHT, LEFT };
 
 static xcb_connection_t		*connection;
 static xcb_ewmh_connection_t 	*ewmh;
@@ -208,6 +209,41 @@ arai_wrap(xcb_window_t window)
 }
 
 static void
+arai_warp_pointer(xcb_window_t window, int mode)
+{
+	xcb_get_geometry_reply_t *geometry = xcb_get_geometry_reply(connection,
+			xcb_get_geometry(connection, window),
+			NULL);
+	xcb_warp_pointer(connection,
+			XCB_NONE,
+			window,
+			0, 0, 0, 0,
+			mode ? geometry->width + BORDER : geometry->width/2,
+			mode ? geometry->height + BORDER : geometry->height/2);
+	free(geometry);
+}
+
+static void
+arai_snap(xcb_window_t window, int mode)
+{
+	const uint32_t values[] = {
+		mode ? GAP : screen->width_in_pixels / 2 + GAP / 2,
+		GAP + TOP,
+		screen->width_in_pixels / 2 - GAP * 1.5 - BORDER * 2,
+		screen->height_in_pixels - GAP * 2 - BORDER * 2 - BOT - TOP,
+		XCB_STACK_MODE_ABOVE
+	};
+	xcb_configure_window(connection,
+			window,
+			XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y |
+			XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT |
+			XCB_CONFIG_WINDOW_STACK_MODE,
+			values);
+	arai_warp_pointer(window, CENTER);
+	xcb_ungrab_pointer(connection, XCB_CURRENT_TIME);
+}
+
+static void
 arai_move(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geometry, xcb_window_t window)
 {
 	uint32_t values[] = {
@@ -224,6 +260,8 @@ arai_move(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geometry
 			window,
 			XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y,
 			values);
+	if (pointer->root_x < SNAP) arai_snap(window, LEFT);
+	if (pointer->root_x > screen->width_in_pixels - SNAP) arai_snap(window, RIGHT);
 }
 
 static void
@@ -241,21 +279,6 @@ arai_resize(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geomet
 			window,
 			XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT,
 			values);
-}
-
-static void
-arai_warp_pointer(xcb_window_t window, int mode)
-{
-	xcb_get_geometry_reply_t *geometry = xcb_get_geometry_reply(connection,
-			xcb_get_geometry(connection, window),
-			NULL);
-	xcb_warp_pointer(connection,
-			XCB_NONE,
-			window,
-			0, 0, 0, 0,
-			mode ? geometry->width + BORDER : geometry->width/2,
-			mode ? geometry->height + BORDER : geometry->height/2);
-	free(geometry);
 }
 
 static void

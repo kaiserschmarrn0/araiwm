@@ -8,6 +8,7 @@
 #define FOCUSCOLOR	0xFFFFFF
 #define UNFOCUSCOLOR	0x839496
 #define NUM_WS		4
+#define SNAP		16
 //#define UNFOCUSCOLOR	0x9aaeb0
 
 //#define UNFOCUSCOLOR	0xE4D1B0
