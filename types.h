@@ -7,10 +7,4 @@ typedef struct {
 typedef struct {
 	uint16_t mod;
 	uint16_t button;
-	void (*function) (xcb_window_t);
 } arai_button;
-
-typedef struct {
-	uint16_t type;
-	void (*function) (xcb_generic_event_t*);
-} arai_event;
