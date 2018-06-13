@@ -1,6 +1,7 @@
 #include "types.h"
 
 #define MOD		XCB_MOD_MASK_4
+#define SHIFT		XCB_MOD_MASK_SHIFT
 #define BORDER		4
 #define GAP		6
 #define TOP		24
@@ -9,27 +10,32 @@
 #define UNFOCUSCOLOR	0x839496
 #define NUM_WS		4
 #define SNAP		4
-//#define UNFOCUSCOLOR	0x9aaeb0
 
-//#define UNFOCUSCOLOR	0xE4D1B0
-//#define FOCUSCOLOR	0xa9a9a8
-//#define UNFOCUSCOLOR	0x071d22
+static void arai_kill();
+static void arai_center();
+static void arai_cycle();
 
-static void arai_kill(xcb_window_t window);
-static void arai_center(xcb_window_t window);
-static void arai_cycle(xcb_window_t window);
-
-arai_button buttons[] = {
+static const arai_button buttons[] = {
 	{ MOD, 1 },
 	{ MOD, 3 }
 };
 
-arai_key keys[] = {
+static const voidkey voidkeys[] = {
 	{ MOD, XK_q, arai_kill},
 	{ MOD, XK_g, arai_center },
 	{ MOD, XK_Tab, arai_cycle },
-	{ MOD, XK_1, NULL },
-	{ MOD, XK_2, NULL },
-	{ MOD, XK_3, NULL },
-	{ MOD, XK_4, NULL },
+};
+
+static const argkey wskeys[] = {
+	{ MOD, XK_1},
+	{ MOD, XK_2},
+	{ MOD, XK_3},
+	{ MOD, XK_4},
+};
+
+static const argkey sendkeys[] = {
+	{ MOD | SHIFT, XK_1},
+	{ MOD | SHIFT, XK_2},
+	{ MOD | SHIFT, XK_3},
+	{ MOD | SHIFT, XK_4}
 };

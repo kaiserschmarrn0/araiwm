@@ -1,8 +1,13 @@
 typedef struct {
 	uint16_t mod;
 	xcb_keysym_t key;
-	void (*function) (xcb_window_t);
-} arai_key;
+	void (*function) (void);
+} voidkey;
+
+typedef struct {
+	uint16_t mod;
+	xcb_keysym_t key;
+} argkey;
 
 typedef struct {
 	uint16_t mod;

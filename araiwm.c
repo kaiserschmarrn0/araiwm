@@ -64,7 +64,7 @@ arai_setup_icccm(void)
 static void
 arai_buttongrab(void)
 {
-	for (int i = 0; i < 2; i++) {
+	for (int i = 0; i < sizeof(buttons)/sizeof(*buttons); i++)
 		xcb_grab_button(connection,
 			0,
 			screen->root,
@@ -76,27 +76,41 @@ arai_buttongrab(void)
 			XCB_NONE,
 			buttons[i].button,
 			buttons[i].mod);
-	}
 }
 
 static void
 arai_keygrab(void)
 {
 	xcb_key_symbols_t *keysyms = xcb_key_symbols_alloc(connection);
-	for (int i = 0; i < sizeof(keys)/sizeof(*keys); i++) {
+	for (int i = 0; i < sizeof(voidkeys)/sizeof(*voidkeys); i++)
 		xcb_grab_key(connection,
 			0,
 		       	screen->root,
-			keys[i].mod,
-			*xcb_key_symbols_get_keycode(keysyms, keys[i].key),
+			voidkeys[i].mod,
+			*xcb_key_symbols_get_keycode(keysyms, voidkeys[i].key),
 		       	XCB_GRAB_MODE_ASYNC,
 			XCB_GRAB_MODE_ASYNC);
-	}
+	for (int i = 0; i < sizeof(wskeys)/sizeof(*wskeys); i++)
+		xcb_grab_key(connection,
+			0,
+		       	screen->root,
+			wskeys[i].mod,
+			*xcb_key_symbols_get_keycode(keysyms, wskeys[i].key),
+		       	XCB_GRAB_MODE_ASYNC,
+			XCB_GRAB_MODE_ASYNC);
+	for (int i = 0; i < sizeof(sendkeys)/sizeof(*sendkeys); i++)
+		xcb_grab_key(connection,
+			0,
+		       	screen->root,
+			sendkeys[i].mod,
+			*xcb_key_symbols_get_keycode(keysyms, sendkeys[i].key),
+		       	XCB_GRAB_MODE_ASYNC,
+			XCB_GRAB_MODE_ASYNC);
 	xcb_key_symbols_free(keysyms);
 }
 
 static void
-arai_print_clients() {
+arai_print_clients(void) {
 	client *current =wslist[curws];
 	while (current != NULL) {
 		printf("%d ", current->id);
@@ -112,21 +126,24 @@ arai_add_client(xcb_window_t window)
 	wslist[curws] = malloc(sizeof(client));
 	wslist[curws]->next = temp;
 	wslist[curws]->id = window;
+	arai_print_clients();
 }
 
 static void
 arai_remove_client(xcb_window_t window)
 {
 	client *current = wslist[curws], *prev = NULL;
-	while (current->id != window) {
+	while (current && current->id != window) {
 		prev = current;
 		current = current->next;
 	}
+	if (!current) return;
 	if (current->next && prev) prev->next = current->next;
 	else if (prev) prev->next = NULL;
 	else if (current->next) wslist[curws] = current->next;
 	else wslist[curws] = NULL;
 	free(current);
+	arai_print_clients();
 }
 
 static int
@@ -142,7 +159,7 @@ arai_check_list(xcb_window_t window)
 }
 
 static void
-arai_free_list() {
+arai_free_list(void) {
 	client *current, *temp;
 	if (current = wslist[curws]) {
 		wslist[curws] = NULL;
@@ -214,10 +231,9 @@ arai_wrap(xcb_window_t window)
 			window,
 			XCB_CONFIG_WINDOW_BORDER_WIDTH,
 			values);
-	arai_center(window);
 	arai_focus(window, FOCUS);
+	arai_center(window);
 	arai_add_client(window);
-	arai_print_clients();
 }
 
 static void
@@ -236,7 +252,7 @@ arai_warp_pointer(xcb_window_t window, int mode)
 }
 
 static void
-arai_snap(xcb_window_t window, int mode)
+arai_snap(int mode)
 {
 	const uint32_t values[] = {
 		mode ? GAP : screen->width_in_pixels / 2 + GAP / 2,
@@ -246,17 +262,17 @@ arai_snap(xcb_window_t window, int mode)
 		XCB_STACK_MODE_ABOVE
 	};
 	xcb_configure_window(connection,
-			window,
+			focuswindow,
 			XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y |
 			XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT |
 			XCB_CONFIG_WINDOW_STACK_MODE,
 			values);
-	arai_warp_pointer(window, CENTER);
+	//arai_warp_pointer(focuswindow, CENTER);
 	xcb_ungrab_pointer(connection, XCB_CURRENT_TIME);
 }
 
 static void
-arai_move(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geometry, xcb_window_t window)
+arai_move(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geometry)
 {
 	uint32_t values[] = {
 		(pointer->root_x + geometry->width / 2 + BORDER * 2 > screen->width_in_pixels) ?
@@ -269,15 +285,15 @@ arai_move(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geometry
 	if (pointer->root_x < geometry->width / 2 + BORDER) values[0] = 0;
 	if (pointer->root_y < geometry->height / 2 + TOP + BORDER) values[1] = TOP;
 	xcb_configure_window(connection,
-			window,
+			focuswindow,
 			XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y,
 			values);
-	if (pointer->root_x < SNAP) arai_snap(window, LEFT);
-	if (pointer->root_x > screen->width_in_pixels - SNAP) arai_snap(window, RIGHT);
+	if (pointer->root_x < SNAP) arai_snap(LEFT);
+	if (pointer->root_x > screen->width_in_pixels - SNAP) arai_snap(RIGHT);
 }
 
 static void
-arai_resize(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geometry, xcb_window_t window)
+arai_resize(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geometry)
 {
 	const uint32_t values[2] = {
 		(pointer->root_x < geometry->x + 64) ?
@@ -288,16 +304,16 @@ arai_resize(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geomet
 		(pointer->root_y - geometry->y - 2 * BORDER + 1)
 	};
 	xcb_configure_window(connection,
-			window,
+			focuswindow,
 			XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT,
 			values);
 }
 
 static void
-arai_center(xcb_window_t window)
+arai_center(void)
 {
 	xcb_get_geometry_reply_t *geometry = xcb_get_geometry_reply(connection,
-			xcb_get_geometry(connection, window),
+			xcb_get_geometry(connection, focuswindow),
 			NULL);
 	const uint32_t values[] = {
 		(screen->width_in_pixels - geometry->width) / 2 - BORDER,	
@@ -305,18 +321,18 @@ arai_center(xcb_window_t window)
 		XCB_STACK_MODE_ABOVE
 	};
 	xcb_configure_window(connection,
-			window,
+			focuswindow,
 			XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y |
 			XCB_CONFIG_WINDOW_STACK_MODE,
 			values);
 }
 
 static void
-arai_cycle(xcb_window_t window)
+arai_cycle(void)
 {
 	const uint32_t values[] = { XCB_STACK_MODE_ABOVE };
 	client *current = wslist[curws];
-	while (current && current->id != window) current = current->next;
+	while (current && current->id != focuswindow) current = current->next;
 	if (!current) return;
 	if (current->next) arai_focus(current->next->id, FOCUS);
 	else arai_focus(wslist[curws]->id, FOCUS);
@@ -328,11 +344,11 @@ arai_cycle(xcb_window_t window)
 }
 
 static void
-arai_delete(xcb_window_t window)
+arai_delete(xcb_window_t temp)
 {
 	xcb_client_message_event_t event;
 	event.response_type = XCB_CLIENT_MESSAGE;
-	event.window = window;
+	event.window = temp;
 	event.format = 32;
 	event.sequence = 0;
 	event.type = atoms[0];
@@ -340,31 +356,30 @@ arai_delete(xcb_window_t window)
 	event.data.data32[1] = XCB_CURRENT_TIME;
 	xcb_send_event(connection,
 			0,
-			window,
+			temp,
 			XCB_EVENT_MASK_NO_EVENT,
 			(char *)&event);
 }
 
 static void
-arai_kill(xcb_window_t window)
+arai_kill(void)
 {
-	focuswindow = screen->root;
-	arai_remove_client(window);
+	xcb_window_t temp = focuswindow;
+	arai_focus(screen->root, FOCUS);
 	xcb_icccm_get_wm_protocols_reply_t protocols;
 	if (xcb_icccm_get_wm_protocols_reply(connection,
 				xcb_icccm_get_wm_protocols_unchecked(connection,
-					window,
+					temp,
 					ewmh->WM_PROTOCOLS),
 				&protocols,
 				NULL))
 		for (int i = 0; i < protocols.atoms_len; i++)
 			if (protocols.atoms[i] == atoms[1]) {
-				arai_delete(window);
+				arai_delete(temp);
 				xcb_icccm_get_wm_protocols_reply_wipe(&protocols);
 				return;
 			}
-	xcb_kill_client(connection, window);
-	arai_print_clients(); //debug
+	xcb_kill_client(connection, temp);
 }
 
 static void
@@ -386,19 +401,43 @@ arai_change_workspace(int ws)
 }
 
 static void
+arai_sendws(int ws)
+{
+	int prev = curws;
+	curws = ws;
+	arai_add_client(focuswindow);
+	xcb_unmap_window(connection, focuswindow);
+	curws = prev;
+	arai_focus(screen->root, FOCUS);
+}
+
+static void
 arai_key_press(xcb_generic_event_t *event)
 {
-	xcb_keysym_t keysym = arai_get_keysym(((xcb_key_press_event_t *)event)->detail);
-	switch (keysym) {
+	xcb_key_press_event_t *ev = (xcb_key_press_event_t *)event;
+	xcb_keysym_t keysym = arai_get_keysym(ev->detail);
+	/*switch (keysym) {
 		case XK_1: { arai_change_workspace(0); return; } break;
 		case XK_2: { arai_change_workspace(1); return; } break;
 		case XK_3: { arai_change_workspace(2); return; } break;
 		case XK_4: { arai_change_workspace(3); return; } break;
-	}
+	}*/
+	for (int i = 0; i < sizeof(wskeys)/sizeof(*wskeys); i++)
+		if (keysym == wskeys[i].key && wskeys[i].mod == ev->state) {
+			arai_change_workspace(i);
+			break;
+		}
 	if (focuswindow == screen->root || !arai_check_managed(focuswindow)) return;
-	for (int i = 0; i < sizeof(keys)/sizeof(*keys); i++)
-		if (keysym == keys[i].key)
-			keys[i].function(focuswindow);
+	for (int i = 0; i < sizeof(sendkeys)/sizeof(*sendkeys); i++)
+		if (keysym == sendkeys[i].key && sendkeys[i].mod == ev->state) {
+			arai_sendws(i);
+			break;
+		}
+	for (int i = 0; i < sizeof(voidkeys)/sizeof(*voidkeys); i++)
+		if (keysym == voidkeys[i].key && voidkeys[i].mod == ev->state) {
+			voidkeys[i].function();
+			break;
+		}
 }
 
 static void
@@ -434,8 +473,8 @@ arai_motion_notify(xcb_generic_event_t *event, int mode, xcb_window_t carry)
 	xcb_get_geometry_reply_t *geometry = xcb_get_geometry_reply(connection,
 			xcb_get_geometry(connection, carry),
 			NULL);
-	if (mode == 1) arai_move(pointer, geometry, focuswindow);	
-	else if (mode == 3) arai_resize(pointer, geometry, focuswindow);
+	if (mode == 1) arai_move(pointer, geometry);	
+	else if (mode == 3) arai_resize(pointer, geometry);
 	free(geometry);
 	free(pointer);
 }
@@ -458,6 +497,10 @@ arai_dive(void)
 					arai_check_list(e->window))
 				arai_wrap(e->window);
 			xcb_map_window(connection, e->window);
+		} break;
+		case XCB_UNMAP_NOTIFY: {	
+			xcb_map_notify_event_t *e = (xcb_map_notify_event_t *)event;
+			arai_remove_client(e->window);
 		} break;
 		case XCB_DESTROY_NOTIFY: {
 			xcb_destroy_notify_event_t *e = (xcb_destroy_notify_event_t *)event;
