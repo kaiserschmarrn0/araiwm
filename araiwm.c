@@ -129,6 +129,18 @@ arai_remove_client(xcb_window_t window)
 	free(current);
 }
 
+static int
+arai_check_list(xcb_window_t window)
+{
+	client *current = wslist[curws];
+	while (current) {
+		if (current->id == window)
+			return 0;
+		current = current->next;
+	}
+	return 1;
+}
+
 static void
 arai_free_list() {
 	client *current, *temp;
@@ -356,10 +368,34 @@ arai_kill(xcb_window_t window)
 }
 
 static void
+arai_change_workspace(int ws) 
+{
+	client *current = wslist[curws];
+	while (current) {
+		xcb_unmap_window(connection, current->id);
+		current = current->next;
+	}
+	curws = ws;
+	current = wslist[curws];
+	while (current) {
+		xcb_map_window(connection, current->id);
+		current = current->next;
+	}
+	if (wslist[curws]) arai_focus(wslist[curws]->id, FOCUS);
+	else arai_focus(screen->root, FOCUS);
+}
+
+static void
 arai_key_press(xcb_generic_event_t *event)
 {
-	if (focuswindow == screen->root || !arai_check_managed(focuswindow)) return;
 	xcb_keysym_t keysym = arai_get_keysym(((xcb_key_press_event_t *)event)->detail);
+	switch (keysym) {
+		case XK_1: { arai_change_workspace(0); return; } break;
+		case XK_2: { arai_change_workspace(1); return; } break;
+		case XK_3: { arai_change_workspace(2); return; } break;
+		case XK_4: { arai_change_workspace(3); return; } break;
+	}
+	if (focuswindow == screen->root || !arai_check_managed(focuswindow)) return;
 	for (int i = 0; i < sizeof(keys)/sizeof(*keys); i++)
 		if (keysym == keys[i].key)
 			keys[i].function(focuswindow);
@@ -418,7 +454,8 @@ arai_dive(void)
 		} break;
 		case XCB_MAP_NOTIFY: {
 			xcb_map_notify_event_t *e = (xcb_map_notify_event_t *)event;
-			if (!e->override_redirect && arai_check_managed(e->window))
+			if (!e->override_redirect && arai_check_managed(e->window) &&
+					arai_check_list(e->window))
 				arai_wrap(e->window);
 			xcb_map_window(connection, e->window);
 		} break;
