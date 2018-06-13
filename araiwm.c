@@ -293,12 +293,12 @@ arai_move(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geometry
 			XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y,
 			values);
 	if (pointer->root_x < SNAP_X) {
-		if (pointer->root_y < SNAP_Y) arai_snap(LEFT, UP);
-		else if (pointer->root_y > screen->height_in_pixels - SNAP_Y) arai_snap(LEFT, DOWN);
+		if (pointer->root_y < SNAP_Y + TOP) arai_snap(LEFT, UP);
+		else if (pointer->root_y > screen->height_in_pixels - SNAP_Y - BOT) arai_snap(LEFT, DOWN);
 		else arai_snap(LEFT, NONE);
 	} else if (pointer->root_x > screen->width_in_pixels - SNAP_X) {
-		if (pointer->root_y < SNAP_Y) arai_snap(RIGHT, UP);
-		else if (pointer->root_y > screen->height_in_pixels - SNAP_Y) arai_snap(RIGHT, DOWN);
+		if (pointer->root_y < SNAP_Y + TOP) arai_snap(RIGHT, UP);
+		else if (pointer->root_y > screen->height_in_pixels - SNAP_Y - BOT) arai_snap(RIGHT, DOWN);
 		else arai_snap(RIGHT, NONE);
 	}
 }
@@ -306,7 +306,7 @@ arai_move(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geometry
 static void
 arai_resize(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geometry)
 {
-	const uint32_t values[2] = {
+	uint32_t values[2] = {
 		(pointer->root_x < geometry->x + 64) ?
 		64 - 2 * BORDER :
 		(pointer->root_x - geometry->x - 2 * BORDER + 1),
@@ -314,6 +314,8 @@ arai_resize(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geomet
 		64 - 2 * BORDER :
 		(pointer->root_y - geometry->y - 2 * BORDER + 1)
 	};
+	if (pointer->root_y > screen->height_in_pixels - BOT)
+		values[1] = screen->height_in_pixels - BOT - geometry->y - 2 * BORDER;
 	xcb_configure_window(connection,
 			focuswindow,
 			XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT,
@@ -396,6 +398,7 @@ arai_kill(void)
 static void
 arai_change_workspace(int ws) 
 {
+	if (ws == curws) return;
 	client *current = wslist[curws];
 	while (current) {
 		xcb_unmap_window(connection, current->id);

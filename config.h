@@ -4,10 +4,10 @@
 #define SHIFT		XCB_MOD_MASK_SHIFT
 #define BORDER		4
 #define GAP		6
-#define TOP		24
-#define BOT		0
-#define FOCUSCOLOR	0xFFFFFF
-#define UNFOCUSCOLOR	0x839496
+#define TOP		0
+#define BOT		32
+#define FOCUSCOLOR	0x839496
+#define UNFOCUSCOLOR	0x536567
 #define NUM_WS		4
 #define SNAP_X		4
 #define SNAP_Y		128
