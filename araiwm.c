@@ -10,7 +10,8 @@
 
 enum { FOCUS, UNFOCUS };
 enum { CENTER, CORNER };
-enum { RIGHT, LEFT };
+enum { RIGHT, LEFT};
+enum { NONE, DOWN, UP };
 
 static xcb_connection_t		*connection;
 static xcb_ewmh_connection_t 	*ewmh;
@@ -252,22 +253,25 @@ arai_warp_pointer(xcb_window_t window, int mode)
 }
 
 static void
-arai_snap(int mode)
+arai_snap(int m, int mo)
 {
-	const uint32_t values[] = {
-		mode ? GAP : screen->width_in_pixels / 2 + GAP / 2,
+	uint32_t values[] = {
+		m ? GAP : screen->width_in_pixels / 2 + GAP / 2,
 		GAP + TOP,
 		screen->width_in_pixels / 2 - GAP * 1.5 - BORDER * 2,
 		screen->height_in_pixels - GAP * 2 - BORDER * 2 - BOT - TOP,
 		XCB_STACK_MODE_ABOVE
 	};
+	if (mo) {
+		values[1] = (mo-1) ? GAP + TOP : (screen->height_in_pixels - TOP - BOT) / 2 + GAP / 2 + TOP;
+		values[3] = (screen->height_in_pixels - TOP - BOT) / 2 - GAP * 1.5 - BORDER * 2;
+	}
 	xcb_configure_window(connection,
 			focuswindow,
 			XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y |
 			XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT |
 			XCB_CONFIG_WINDOW_STACK_MODE,
 			values);
-	//arai_warp_pointer(focuswindow, CENTER);
 	xcb_ungrab_pointer(connection, XCB_CURRENT_TIME);
 }
 
@@ -288,8 +292,15 @@ arai_move(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geometry
 			focuswindow,
 			XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y,
 			values);
-	if (pointer->root_x < SNAP) arai_snap(LEFT);
-	if (pointer->root_x > screen->width_in_pixels - SNAP) arai_snap(RIGHT);
+	if (pointer->root_x < SNAP_X) {
+		if (pointer->root_y < SNAP_Y) arai_snap(LEFT, UP);
+		else if (pointer->root_y > screen->height_in_pixels - SNAP_Y) arai_snap(LEFT, DOWN);
+		else arai_snap(LEFT, NONE);
+	} else if (pointer->root_x > screen->width_in_pixels - SNAP_X) {
+		if (pointer->root_y < SNAP_Y) arai_snap(RIGHT, UP);
+		else if (pointer->root_y > screen->height_in_pixels - SNAP_Y) arai_snap(RIGHT, DOWN);
+		else arai_snap(RIGHT, NONE);
+	}
 }
 
 static void

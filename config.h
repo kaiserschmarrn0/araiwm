@@ -9,7 +9,8 @@
 #define FOCUSCOLOR	0xFFFFFF
 #define UNFOCUSCOLOR	0x839496
 #define NUM_WS		4
-#define SNAP		4
+#define SNAP_X		4
+#define SNAP_Y		128
 
 static void arai_kill();
 static void arai_center();
