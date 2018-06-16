@@ -10,8 +10,7 @@
 
 enum { FOCUS, UNFOCUS };
 enum { CENTER, CORNER };
-enum { RIGHT, LEFT};
-enum { NONE, DOWN, UP };
+enum { LEFT, ULEFT, DLEFT, RIGHT, URIGHT, DRIGHT };
 
 static xcb_connection_t		*connection;
 static xcb_ewmh_connection_t 	*ewmh;
@@ -79,32 +78,17 @@ arai_buttongrab(void)
 			buttons[i].mod);
 }
 
+//free this shit
 static void
 arai_keygrab(void)
 {
 	xcb_key_symbols_t *keysyms = xcb_key_symbols_alloc(connection);
-	for (int i = 0; i < sizeof(voidkeys)/sizeof(*voidkeys); i++)
+	for (int i = 0; i < sizeof(keys)/sizeof(*keys); i++)
 		xcb_grab_key(connection,
 			0,
 		       	screen->root,
-			voidkeys[i].mod,
-			*xcb_key_symbols_get_keycode(keysyms, voidkeys[i].key),
-		       	XCB_GRAB_MODE_ASYNC,
-			XCB_GRAB_MODE_ASYNC);
-	for (int i = 0; i < sizeof(wskeys)/sizeof(*wskeys); i++)
-		xcb_grab_key(connection,
-			0,
-		       	screen->root,
-			wskeys[i].mod,
-			*xcb_key_symbols_get_keycode(keysyms, wskeys[i].key),
-		       	XCB_GRAB_MODE_ASYNC,
-			XCB_GRAB_MODE_ASYNC);
-	for (int i = 0; i < sizeof(sendkeys)/sizeof(*sendkeys); i++)
-		xcb_grab_key(connection,
-			0,
-		       	screen->root,
-			sendkeys[i].mod,
-			*xcb_key_symbols_get_keycode(keysyms, sendkeys[i].key),
+			keys[i].mod,
+			*xcb_key_symbols_get_keycode(keysyms, keys[i].key),
 		       	XCB_GRAB_MODE_ASYNC,
 			XCB_GRAB_MODE_ASYNC);
 	xcb_key_symbols_free(keysyms);
@@ -112,8 +96,8 @@ arai_keygrab(void)
 
 static void
 arai_print_clients(void) {
-	client *current =wslist[curws];
-	while (current != NULL) {
+	client *current = wslist[curws];
+	while (current) {
 		printf("%d ", current->id);
 		current = current->next;
 	}
@@ -138,11 +122,16 @@ arai_remove_client(xcb_window_t window)
 		prev = current;
 		current = current->next;
 	}
-	if (!current) return;
-	if (current->next && prev) prev->next = current->next;
-	else if (prev) prev->next = NULL;
-	else if (current->next) wslist[curws] = current->next;
-	else wslist[curws] = NULL;
+	if (!current)
+		return;
+	else if (current->next && prev)
+		prev->next = current->next;
+	else if (prev)
+		prev->next = NULL;
+	else if (current->next)
+		wslist[curws] = current->next;
+	else
+		wslist[curws] = NULL;
 	free(current);
 	arai_print_clients();
 }
@@ -187,7 +176,8 @@ arai_check_managed(xcb_window_t window)
 	xcb_ewmh_get_atoms_reply_t type;
 	if (!xcb_ewmh_get_wm_window_type_reply(ewmh,
 				xcb_ewmh_get_wm_window_type(ewmh, window),
-				&type, NULL)) return 1;
+				&type, NULL))
+		return 1;
 	for (unsigned int i = 0; i < type.atoms_len; i++)
 		if (type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_DOCK ||
 					type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_TOOLBAR ||
@@ -252,19 +242,35 @@ arai_warp_pointer(xcb_window_t window, int mode)
 	free(geometry);
 }
 
+
 static void
-arai_snap(int m, int mo)
+arai_snap(int arg)
 {
 	uint32_t values[] = {
-		m ? GAP : screen->width_in_pixels / 2 + GAP / 2,
+		0,
 		GAP + TOP,
 		screen->width_in_pixels / 2 - GAP * 1.5 - BORDER * 2,
 		screen->height_in_pixels - GAP * 2 - BORDER * 2 - BOT - TOP,
 		XCB_STACK_MODE_ABOVE
 	};
-	if (mo) {
-		values[1] = (mo-1) ? GAP + TOP : (screen->height_in_pixels - TOP - BOT) / 2 + GAP / 2 + TOP;
-		values[3] = (screen->height_in_pixels - TOP - BOT) / 2 - GAP * 1.5 - BORDER * 2;
+	if (arg < 3) {
+		values[0] = GAP;
+		if (arg != 0) {
+			values[3] = (screen->height_in_pixels - TOP - BOT) / 2 - GAP * 1.5 - BORDER * 2;
+			if (arg == ULEFT)
+				values[1] = GAP + TOP;
+			else
+				values[1] = (screen->height_in_pixels - TOP - BOT) / 2 + GAP / 2 + TOP;
+		}
+	} else {
+		values[0] = screen->width_in_pixels / 2 + GAP / 2;
+		if (arg != 3) {
+			values[3] = (screen->height_in_pixels - TOP - BOT) / 2 - GAP * 1.5 - BORDER * 2;
+			if (arg == URIGHT)
+				values[1] = GAP + TOP;
+			else
+				values[1] = (screen->height_in_pixels - TOP - BOT) / 2 + GAP / 2 + TOP;
+		}
 	}
 	xcb_configure_window(connection,
 			focuswindow,
@@ -293,13 +299,13 @@ arai_move(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geometry
 			XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y,
 			values);
 	if (pointer->root_x < SNAP_X) {
-		if (pointer->root_y < SNAP_Y + TOP) arai_snap(LEFT, UP);
-		else if (pointer->root_y > screen->height_in_pixels - SNAP_Y - BOT) arai_snap(LEFT, DOWN);
-		else arai_snap(LEFT, NONE);
+		if (pointer->root_y < SNAP_Y + TOP) arai_snap(ULEFT);
+		else if (pointer->root_y > screen->height_in_pixels - SNAP_Y - BOT) arai_snap(DLEFT);
+		else arai_snap(LEFT);
 	} else if (pointer->root_x > screen->width_in_pixels - SNAP_X) {
-		if (pointer->root_y < SNAP_Y + TOP) arai_snap(RIGHT, UP);
-		else if (pointer->root_y > screen->height_in_pixels - SNAP_Y - BOT) arai_snap(RIGHT, DOWN);
-		else arai_snap(RIGHT, NONE);
+		if (pointer->root_y < SNAP_Y + TOP) arai_snap(URIGHT);
+		else if (pointer->root_y > screen->height_in_pixels - SNAP_Y - BOT) arai_snap(DRIGHT);
+		else arai_snap(RIGHT);
 	}
 }
 
@@ -323,7 +329,7 @@ arai_resize(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geomet
 }
 
 static void
-arai_center(void)
+arai_center(int arg)
 {
 	xcb_get_geometry_reply_t *geometry = xcb_get_geometry_reply(connection,
 			xcb_get_geometry(connection, focuswindow),
@@ -341,7 +347,7 @@ arai_center(void)
 }
 
 static void
-arai_cycle(void)
+arai_cycle(int arg)
 {
 	const uint32_t values[] = { XCB_STACK_MODE_ABOVE };
 	client *current = wslist[curws];
@@ -375,7 +381,7 @@ arai_delete(xcb_window_t temp)
 }
 
 static void
-arai_kill(void)
+arai_kill(int arg)
 {
 	xcb_window_t temp = focuswindow;
 	arai_focus(screen->root, FOCUS);
@@ -396,7 +402,7 @@ arai_kill(void)
 }
 
 static void
-arai_change_workspace(int ws) 
+arai_chws(int ws) 
 {
 	if (ws == curws) return;
 	client *current = wslist[curws];
@@ -430,26 +436,13 @@ arai_key_press(xcb_generic_event_t *event)
 {
 	xcb_key_press_event_t *ev = (xcb_key_press_event_t *)event;
 	xcb_keysym_t keysym = arai_get_keysym(ev->detail);
-	/*switch (keysym) {
-		case XK_1: { arai_change_workspace(0); return; } break;
-		case XK_2: { arai_change_workspace(1); return; } break;
-		case XK_3: { arai_change_workspace(2); return; } break;
-		case XK_4: { arai_change_workspace(3); return; } break;
-	}*/
-	for (int i = 0; i < sizeof(wskeys)/sizeof(*wskeys); i++)
-		if (keysym == wskeys[i].key && wskeys[i].mod == ev->state) {
-			arai_change_workspace(i);
-			break;
-		}
-	if (focuswindow == screen->root || !arai_check_managed(focuswindow)) return;
-	for (int i = 0; i < sizeof(sendkeys)/sizeof(*sendkeys); i++)
-		if (keysym == sendkeys[i].key && sendkeys[i].mod == ev->state) {
-			arai_sendws(i);
-			break;
-		}
-	for (int i = 0; i < sizeof(voidkeys)/sizeof(*voidkeys); i++)
-		if (keysym == voidkeys[i].key && voidkeys[i].mod == ev->state) {
-			voidkeys[i].function();
+	for (int i = 0; i < sizeof(keys)/sizeof(*keys); i++)
+		if (keysym == keys[i].key &&
+				keys[i].mod == ev->state &&
+				(keys[i].fwin &&
+				focuswindow ||
+				!keys[i].fwin)) {
+			keys[i].function(keys[i].arg);
 			break;
 		}
 }
@@ -494,6 +487,45 @@ arai_motion_notify(xcb_generic_event_t *event, int mode, xcb_window_t carry)
 }
 
 static void
+enter (xcb_generic_event_t *event)
+{
+	xcb_enter_notify_event_t *e = (xcb_enter_notify_event_t *)event;
+	arai_focus(e->event, FOCUS);
+}
+
+static void
+map (xcb_generic_event_t *event)
+{
+	xcb_map_notify_event_t *e = (xcb_map_notify_event_t *)event;
+	if (!e->override_redirect && arai_check_managed(e->window) &&
+			arai_check_list(e->window))
+		arai_wrap(e->window);
+	xcb_map_window(connection, e->window);
+}
+
+static void
+unmap (xcb_generic_event_t *event)
+{
+	xcb_map_notify_event_t *e = (xcb_map_notify_event_t *)event;
+	arai_remove_client(e->window);
+}
+
+static void
+destroy (xcb_generic_event_t *event)
+{
+	xcb_destroy_notify_event_t *e = (xcb_destroy_notify_event_t *)event;
+	xcb_kill_client(connection, e->window);
+}
+
+static void
+configure (xcb_generic_event_t *event)
+{
+	xcb_configure_notify_event_t *e = (xcb_configure_notify_event_t *)event;
+	if (e->window != focuswindow) arai_focus(e->window, UNFOCUS);
+		arai_focus(focuswindow, FOCUS);
+}
+
+static void
 arai_dive(void)
 {
 	xcb_generic_event_t *event;
@@ -501,45 +533,20 @@ arai_dive(void)
 	int mode;
 	event = xcb_wait_for_event(connection);
 	switch (event->response_type & ~0x80) {
-		case XCB_ENTER_NOTIFY: {
-			xcb_enter_notify_event_t *e = (xcb_enter_notify_event_t *)event;
-			arai_focus(e->event, FOCUS);
-		} break;
-		case XCB_MAP_NOTIFY: {
-			xcb_map_notify_event_t *e = (xcb_map_notify_event_t *)event;
-			if (!e->override_redirect && arai_check_managed(e->window) &&
-					arai_check_list(e->window))
-				arai_wrap(e->window);
-			xcb_map_window(connection, e->window);
-		} break;
-		case XCB_UNMAP_NOTIFY: {	
-			xcb_map_notify_event_t *e = (xcb_map_notify_event_t *)event;
-			arai_remove_client(e->window);
-		} break;
-		case XCB_DESTROY_NOTIFY: {
-			xcb_destroy_notify_event_t *e = (xcb_destroy_notify_event_t *)event;
-			xcb_kill_client(connection, e->window);
-		} break;
-		case XCB_CONFIGURE_NOTIFY: {
-			xcb_configure_notify_event_t *e = (xcb_configure_notify_event_t *)event;
-			if (e->window != focuswindow) arai_focus(e->window, UNFOCUS);
-			arai_focus(focuswindow, FOCUS);
-		} break;
+		case XCB_ENTER_NOTIFY: { enter(event); } break;
+		case XCB_MAP_NOTIFY: { map(event); } break;
+		case XCB_UNMAP_NOTIFY: { unmap(event); } break;
+		case XCB_DESTROY_NOTIFY: { destroy(event); } break;
+		case XCB_CONFIGURE_NOTIFY: { configure(event); } break;
 		case XCB_BUTTON_PRESS: {
 			xcb_button_press_event_t *e = (xcb_button_press_event_t *)event;
 			carry = e->child;
 			mode = e->detail;
 			arai_button_press(e);
 		} break;
-		case XCB_MOTION_NOTIFY: {
-			arai_motion_notify(event, mode, carry);
-		} break;
-		case XCB_BUTTON_RELEASE: {
-			xcb_ungrab_pointer(connection, XCB_CURRENT_TIME);
-		} break;
-		case XCB_KEY_PRESS: {
-			arai_key_press(event);
-		} break;
+		case XCB_MOTION_NOTIFY: { arai_motion_notify(event, mode, carry); } break;
+		case XCB_BUTTON_RELEASE: { xcb_ungrab_pointer(connection, XCB_CURRENT_TIME); } break;
+		case XCB_KEY_PRESS: { arai_key_press(event); };  break;
 	}
 	xcb_flush(connection);
 	free(event);
@@ -548,9 +555,7 @@ arai_dive(void)
 static void
 arai_cleanup(void)
 {
-	arai_print_clients(); //debug
 	arai_free_list();
-	arai_print_clients(); //debug
 	xcb_ungrab_button(connection,
 			XCB_BUTTON_INDEX_ANY,
 			screen->root,
