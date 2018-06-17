@@ -111,7 +111,7 @@ arai_print_clients(void) {
 }
 
 static void
-arai_add_client(xcb_window_t window, int max, int x, int y, int w, int h)
+arai_add_client(xcb_window_t window)
 {
 	client *temp = wslist[curws];
 	wslist[curws] = malloc(sizeof(client));
@@ -243,7 +243,7 @@ arai_wrap(xcb_window_t window)
 			values);
 	arai_focus(window, FOCUS);
 	arai_center(window);
-	arai_add_client(window, 0, 0, 0, 0, 0);
+	arai_add_client(window);
 }
 
 static void
@@ -362,8 +362,9 @@ arai_resize(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geomet
 static void
 arai_center(int arg)
 {
-	//if (arai_find_client(focuswindow)->max == 1)
-	//	max(focuswindow);
+	client *temp = arai_find_client(focuswindow);
+	if (temp && temp->max == 1)
+		max(focuswindow);
 	xcb_get_geometry_reply_t *geometry = xcb_get_geometry_reply(connection,
 			xcb_get_geometry(connection, focuswindow),
 			NULL);
@@ -466,9 +467,11 @@ static void
 arai_sendws(int ws)
 {
 	client* temp = arai_find_client(focuswindow);
+	if (temp->max == 1)
+		max(focuswindow);
 	int prev = curws;
 	curws = ws;
-	arai_add_client(focuswindow, temp->max, temp->x, temp->y, temp->w, temp->h);
+	arai_add_client(focuswindow);
 	curws = prev;
 	xcb_unmap_window(connection, focuswindow);
 	arai_focus(screen->root, FOCUS);
