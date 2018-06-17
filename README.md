@@ -1,6 +1,6 @@
 araiwm - arai window manager
 -----------------------
-araiwm is a cute and tiny window manager for X
+manages windows no da
 
 
 Requirements
