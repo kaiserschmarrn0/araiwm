@@ -17,7 +17,7 @@ static xcb_ewmh_connection_t 	*ewmh;
 static xcb_screen_t		*screen;
 static xcb_window_t		focuswindow;
 static xcb_atom_t 		atoms[2];
-static client			*wslist[NUM_WS];
+static client			*wslist[NUM_WS] = { NULL };
 static int			curws = 0;
 
 static void
@@ -111,13 +111,22 @@ arai_print_clients(void) {
 }
 
 static void
-arai_add_client(xcb_window_t window)
+newclient(xcb_window_t window)
 {
 	client *temp = wslist[curws];
 	wslist[curws] = malloc(sizeof(client));
 	wslist[curws]->next = temp;
 	wslist[curws]->id = window;
 	wslist[curws]->max = 0;
+	arai_print_clients();
+}
+
+static void
+addclient(client* add, int ws)
+{
+	client *temp = wslist[ws];
+	wslist[ws] = add;
+	wslist[ws]->next = temp;
 	arai_print_clients();
 }
 
@@ -229,6 +238,33 @@ arai_focus(xcb_window_t window, int mode)
 }
 
 static void
+fit(xcb_window_t window)
+{
+	int count = 0;
+	xcb_get_geometry_reply_t *geometry = xcb_get_geometry_reply(connection,
+			xcb_get_geometry(connection, window),
+			NULL);
+	uint32_t values[] = {
+		geometry->width,
+		geometry->height,
+	};
+	if (geometry->width > screen->width_in_pixels - 2 * BORDER) {
+		values[0] = screen->width_in_pixels - 2 * BORDER;
+		count++;
+	}
+	if (geometry->height > screen->height_in_pixels - 2 * BORDER) {
+		values[1] = screen->height_in_pixels - 2 * BORDER;
+		count++;
+	}
+	if (count)
+		xcb_configure_window(connection,
+				window,
+				XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT,
+				values);
+	free(geometry);
+}
+
+static void
 arai_wrap(xcb_window_t window)
 {
 	uint32_t values[] = { XCB_EVENT_MASK_ENTER_WINDOW, XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY };
@@ -242,8 +278,9 @@ arai_wrap(xcb_window_t window)
 			XCB_CONFIG_WINDOW_BORDER_WIDTH,
 			values);
 	arai_focus(window, FOCUS);
+	fit(window);
 	arai_center(window);
-	arai_add_client(window);
+	newclient(window);
 }
 
 static void
@@ -466,12 +503,18 @@ arai_chws(int ws)
 static void
 arai_sendws(int ws)
 {
-	client* temp = arai_find_client(focuswindow);
-	if (temp->max == 1)
-		max(focuswindow);
+	if (focuswindow == screen->root)
+		return;
+	client* oldclient = arai_find_client(focuswindow);
 	int prev = curws;
 	curws = ws;
-	arai_add_client(focuswindow);
+	newclient(focuswindow);
+	client *newclient = arai_find_client(focuswindow);
+	newclient->max = oldclient->max;
+	newclient->x = oldclient->x;
+	newclient->y = oldclient->y;
+	newclient->w = oldclient->w;
+	newclient->h = oldclient->h;
 	curws = prev;
 	xcb_unmap_window(connection, focuswindow);
 	arai_focus(screen->root, FOCUS);
@@ -506,7 +549,7 @@ max(int arg)
 		found->w = geometry->width;
 		found->h = geometry->height;
 		found->max = 1;
-	} else {
+	} else if (found->max == 1) {
 		const uint32_t values[] = {
 			found->x,
 			found->y,
