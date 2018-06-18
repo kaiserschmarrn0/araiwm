@@ -125,7 +125,8 @@ static void
 addclient(client* add, int ws)
 {
 	client *temp = wslist[ws];
-	wslist[ws] = add;
+	wslist[ws] = malloc(sizeof(client));
+	*wslist[ws] = *add;
 	wslist[ws]->next = temp;
 	arai_print_clients();
 }
@@ -505,17 +506,8 @@ arai_sendws(int ws)
 {
 	if (focuswindow == screen->root)
 		return;
-	client* oldclient = arai_find_client(focuswindow);
-	int prev = curws;
-	curws = ws;
-	newclient(focuswindow);
-	client *newclient = arai_find_client(focuswindow);
-	newclient->max = oldclient->max;
-	newclient->x = oldclient->x;
-	newclient->y = oldclient->y;
-	newclient->w = oldclient->w;
-	newclient->h = oldclient->h;
-	curws = prev;
+	client *oldclient = arai_find_client(focuswindow);
+	addclient(oldclient, ws);
 	xcb_unmap_window(connection, focuswindow);
 	arai_focus(screen->root, FOCUS);
 }
