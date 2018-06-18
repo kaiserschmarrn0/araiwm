@@ -343,6 +343,8 @@ arai_move(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geometry
 {
 	if (arai_find_client(focuswindow)->max == 1)
 		return;
+
+#ifdef MOVELIM
 	uint32_t values[] = {
 		(pointer->root_x + geometry->width / 2 + BORDER * 2 > screen->width_in_pixels) ?
 		(screen->width_in_pixels - geometry->width - BORDER * 2) :
@@ -355,6 +357,13 @@ arai_move(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geometry
 		values[0] = 0;
 	if (pointer->root_y < geometry->height / 2 + TOP + BORDER)
 		values[1] = TOP;
+#endif
+#ifndef MOVELIM
+	uint32_t values[] = {
+		pointer->root_x - geometry->width / 2 - BORDER,
+		pointer->root_y - geometry->height / 2 - BORDER
+	};
+#endif
 	if (pointer->root_x < SNAP_X) {
 		if (pointer->root_y < SNAP_Y + TOP)
 			arai_snap(ULEFT);

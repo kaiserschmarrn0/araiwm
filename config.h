@@ -12,6 +12,9 @@
 #define SNAP_X		4
 #define SNAP_Y		200
 
+//uncomment this to drag windows off screen
+#define MOVELIM
+
 static const button buttons[] = {
 //	Modkey	Mouse button
 	{ MOD, 	1 },
