@@ -18,3 +18,8 @@ Installation
 after editing config.h, install using
 
 	make install clean
+
+Todo
+----
+place bar above windows (bar list?)
+reparenting?
