@@ -10,7 +10,7 @@
 
 enum { FOCUS, UNFOCUS };
 enum { CENTER, CORNER };
-enum { LEFT, ULEFT, DLEFT, RIGHT, URIGHT, DRIGHT };
+enum { LEFT, ULEFT, DLEFT, RIGHT, URIGHT, DRIGHT, FULL };
 
 static xcb_connection_t		*connection;
 static xcb_ewmh_connection_t 	*ewmh;
@@ -299,10 +299,34 @@ arai_warp_pointer(xcb_window_t window, int mode)
 	free(geometry);
 }
 
+static void
+restackbars(void)
+{
+	client *found;
+	if ((found = arai_find_client(focuswindow)) && found->max == 1)
+			return;
+	uint32_t values[] = { XCB_STACK_MODE_ABOVE };
+	xcb_query_tree_reply_t *reply;
+	if (reply = xcb_query_tree_reply(connection,
+			xcb_query_tree(connection, screen->root),
+			NULL)) {
+		xcb_window_t *children = xcb_query_tree_children(reply);
+		for (int i = 0; i < xcb_query_tree_children_length(reply); i++)
+			if (!arai_check_managed(children[i]))
+				xcb_configure_window(connection,
+						children[i],
+						XCB_CONFIG_WINDOW_STACK_MODE,
+						values);
+		free(reply);
+	}
+}
+
 
 static void
 arai_snap(int arg)
 {
+	if (focuswindow == screen->root)
+		return;
 	uint32_t values[] = {
 		0,
 		GAP + TOP,
@@ -319,7 +343,7 @@ arai_snap(int arg)
 			else
 				values[1] = (screen->height_in_pixels - TOP - BOT) / 2 + GAP / 2 + TOP;
 		}
-	} else {
+	} else if (arg < 6) {
 		values[0] = screen->width_in_pixels / 2 + GAP / 2;
 		if (arg != 3) {
 			values[3] = (screen->height_in_pixels - TOP - BOT) / 2 - GAP * 1.5 - BORDER * 2;
@@ -328,13 +352,18 @@ arai_snap(int arg)
 			else
 				values[1] = (screen->height_in_pixels - TOP - BOT) / 2 + GAP / 2 + TOP;
 		}
-	}
+	} else {
+		values[0] = GAP;
+		values[1] = GAP + TOP;
+		values[2] = screen->width_in_pixels - GAP * 2 - BORDER * 2;
+	}	
 	xcb_configure_window(connection,
 			focuswindow,
 			XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y |
 			XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT |
 			XCB_CONFIG_WINDOW_STACK_MODE,
 			values);
+	restackbars();
 	xcb_ungrab_pointer(connection, XCB_CURRENT_TIME);
 }
 
@@ -343,7 +372,6 @@ arai_move(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geometry
 {
 	if (arai_find_client(focuswindow)->max == 1)
 		return;
-
 #ifdef MOVELIM
 	uint32_t values[] = {
 		(pointer->root_x + geometry->width / 2 + BORDER * 2 > screen->width_in_pixels) ?
@@ -378,7 +406,15 @@ arai_move(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geometry
 			arai_snap(DRIGHT);
 		else
 			arai_snap(RIGHT);
-	} else
+	} else if (pointer->root_y < SNAP_X)
+		arai_snap(FULL);
+#ifdef MOUSEKILL
+	else if (pointer->root_y > screen->height_in_pixels - SNAP_X) {
+		arai_kill(0);
+		xcb_ungrab_pointer(connection, XCB_CURRENT_TIME);
+	}
+#endif
+	else
 		xcb_configure_window(connection,
 				focuswindow,
 				XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y,
@@ -409,6 +445,8 @@ arai_resize(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geomet
 static void
 arai_center(int arg)
 {
+	if (focuswindow == screen->root)
+		return;
 	client *temp = arai_find_client(focuswindow);
 	if (temp && temp->max == 1)
 		max(focuswindow);
@@ -425,11 +463,14 @@ arai_center(int arg)
 			XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y |
 			XCB_CONFIG_WINDOW_STACK_MODE,
 			values);
+	restackbars();
 }
 
 static void
 arai_cycle(int arg)
 {
+	if (focuswindow == screen->root)
+		return;
 	const uint32_t values[] = { XCB_STACK_MODE_ABOVE };
 	client *current = wslist[curws];
 	while (current && current->id != focuswindow)
@@ -445,6 +486,7 @@ arai_cycle(int arg)
 			XCB_CONFIG_WINDOW_STACK_MODE,
 			values);
 	arai_warp_pointer(focuswindow, CENTER);
+	restackbars();
 }
 
 static void
@@ -468,6 +510,8 @@ arai_delete(xcb_window_t temp)
 static void
 arai_kill(int arg)
 {
+	if (focuswindow == screen->root)
+		return;
 	xcb_window_t temp = focuswindow;
 	arai_focus(screen->root, FOCUS);
 	xcb_icccm_get_wm_protocols_reply_t protocols;
@@ -524,6 +568,8 @@ arai_sendws(int ws)
 static void
 max(int arg)
 {
+	if (focuswindow == screen->root)
+		return;
 	client* found = arai_find_client(focuswindow);
 	if (!found)
 		return;
@@ -575,10 +621,7 @@ arai_key_press(xcb_generic_event_t *event)
 	xcb_keysym_t keysym = arai_get_keysym(ev->detail);
 	for (int i = 0; i < sizeof(keys)/sizeof(*keys); i++)
 		if (keysym == keys[i].key &&
-				keys[i].mod == ev->state &&
-				(keys[i].fwin &&
-				focuswindow ||
-				!keys[i].fwin)) {
+				keys[i].mod == ev->state) {
 			keys[i].function(keys[i].arg);
 			break;
 		}
@@ -594,6 +637,7 @@ arai_button_press(xcb_button_press_event_t *e)
 			e->child,
 			XCB_CONFIG_WINDOW_STACK_MODE,
 			values);
+	restackbars();
 	if (e->detail == 1)
 		arai_warp_pointer(e->child, CENTER);
 	else
