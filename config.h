@@ -13,7 +13,9 @@
 #define SNAP_Y		200
 
 //uncomment this to drag windows off screen
-#define MOVELIM
+//#define MOVELIM
+//comment this to disable dragging down to kill window
+#define MOUSEKILL
 
 static const button buttons[] = {
 //	Modkey	Mouse button
@@ -22,17 +24,18 @@ static const button buttons[] = {
 };
 
 static const key keys[] = {
-//	Modkey		Key	Function	Arg	Focuswin y/n
-	{ MOD, 		XK_q,	arai_kill, 	0, 	1},
-	{ MOD, 		XK_g,	arai_center, 	0, 	1},
-	{ MOD, 		XK_Tab,	arai_cycle,	0, 	1},
-	{ MOD | SHIFT, 	XK_f,	max,		0, 	1},
-	{ MOD, 		XK_1,	arai_chws, 	0, 	0},
-	{ MOD, 		XK_2, 	arai_chws, 	1, 	0},
-	{ MOD, 		XK_3, 	arai_chws, 	2, 	0},
-	{ MOD, 		XK_4, 	arai_chws, 	3, 	0},
-	{ MOD | SHIFT, 	XK_1, 	arai_sendws, 	0, 	1},
-	{ MOD | SHIFT, 	XK_2, 	arai_sendws, 	1, 	1},
-	{ MOD | SHIFT, 	XK_3, 	arai_sendws, 	2, 	1},
-	{ MOD | SHIFT, 	XK_4, 	arai_sendws, 	3, 	1},
+//	Modkey		Key	Function	Arg
+	{ MOD, 		XK_q,	arai_kill, 	0},
+	{ MOD, 		XK_g,	arai_center, 	0},
+	{ MOD, 		XK_Tab,	arai_cycle,	0},
+	{ MOD, 		XK_f, 	arai_snap,	7},
+	{ MOD | SHIFT, 	XK_f,	max,		0},
+	{ MOD, 		XK_1,	arai_chws, 	0},
+	{ MOD, 		XK_2, 	arai_chws, 	1},
+	{ MOD, 		XK_3, 	arai_chws, 	2},
+	{ MOD, 		XK_4, 	arai_chws, 	3},
+	{ MOD | SHIFT, 	XK_1, 	arai_sendws, 	0},
+	{ MOD | SHIFT, 	XK_2, 	arai_sendws, 	1},
+	{ MOD | SHIFT, 	XK_3, 	arai_sendws, 	2},
+	{ MOD | SHIFT, 	XK_4, 	arai_sendws, 	3},
 };
