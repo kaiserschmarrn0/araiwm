@@ -12,10 +12,10 @@
 #define SNAP_X		4
 #define SNAP_Y		200
 
-//uncomment this to drag windows off screen
+//comment this to drag windows off screen
 //#define MOVELIM
 //comment this to disable dragging down to kill window
-#define MOUSEKILL
+//#define MOUSEKILL
 
 static const button buttons[] = {
 //	Modkey	Mouse button

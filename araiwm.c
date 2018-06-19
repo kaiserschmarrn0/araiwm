@@ -370,9 +370,7 @@ arai_snap(int arg)
 static void
 arai_move(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geometry)
 {
-	if (arai_find_client(focuswindow)->max == 1)
-		return;
-#ifdef MOVELIM
+	#ifdef MOVELIM
 	uint32_t values[] = {
 		(pointer->root_x + geometry->width / 2 + BORDER * 2 > screen->width_in_pixels) ?
 		(screen->width_in_pixels - geometry->width - BORDER * 2) :
@@ -424,8 +422,6 @@ arai_move(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geometry
 static void
 arai_resize(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geometry)
 {
-	if (arai_find_client(focuswindow)->max == 1)
-		return;
 	uint32_t values[2] = {
 		(pointer->root_x < geometry->x + 64) ?
 		64 - 2 * BORDER :
@@ -637,6 +633,8 @@ arai_button_press(xcb_button_press_event_t *e)
 			e->child,
 			XCB_CONFIG_WINDOW_STACK_MODE,
 			values);
+	if (arai_find_client(focuswindow)->max == 1)
+		return;
 	restackbars();
 	if (e->detail == 1)
 		arai_warp_pointer(e->child, CENTER);
