@@ -2,7 +2,7 @@ typedef struct {
 	uint16_t mod;
 	xcb_keysym_t key;
 	void (*function) (int arg);
-	int arg, fwin;
+	int arg;
 } key;
 
 typedef struct {
@@ -11,7 +11,7 @@ typedef struct {
 
 typedef struct client {
 	xcb_window_t id;
-	struct client* next;
+	struct client *next;
 	int max, x, y, w, h;
 } client;
 
@@ -21,3 +21,4 @@ static void arai_cycle();
 static void max();
 static void arai_chws();
 static void arai_sendws();
+static void arai_snap();
