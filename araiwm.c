@@ -299,6 +299,7 @@ arai_warp_pointer(xcb_window_t window, int mode)
 	free(geometry);
 }
 
+/* OLD FUNCTION
 static void
 restackbars(void)
 {
@@ -319,8 +320,7 @@ restackbars(void)
 						values);
 		free(reply);
 	}
-}
-
+}*/
 
 static void
 arai_snap(int arg)
@@ -363,14 +363,13 @@ arai_snap(int arg)
 			XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT |
 			XCB_CONFIG_WINDOW_STACK_MODE,
 			values);
-	restackbars();
 	xcb_ungrab_pointer(connection, XCB_CURRENT_TIME);
 }
 
 static void
 arai_move(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geometry)
 {
-	#ifdef MOVELIM
+#ifdef MOVELIM
 	uint32_t values[] = {
 		(pointer->root_x + geometry->width / 2 + BORDER * 2 > screen->width_in_pixels) ?
 		(screen->width_in_pixels - geometry->width - BORDER * 2) :
@@ -459,7 +458,6 @@ arai_center(int arg)
 			XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y |
 			XCB_CONFIG_WINDOW_STACK_MODE,
 			values);
-	restackbars();
 }
 
 static void
@@ -482,7 +480,6 @@ arai_cycle(int arg)
 			XCB_CONFIG_WINDOW_STACK_MODE,
 			values);
 	arai_warp_pointer(focuswindow, CENTER);
-	restackbars();
 }
 
 static void
@@ -635,7 +632,6 @@ arai_button_press(xcb_button_press_event_t *e)
 			values);
 	if (arai_find_client(focuswindow)->max == 1)
 		return;
-	restackbars();
 	if (e->detail == 1)
 		arai_warp_pointer(e->child, CENTER);
 	else

@@ -2,9 +2,9 @@
 
 #define MOD		XCB_MOD_MASK_4
 #define SHIFT		XCB_MOD_MASK_SHIFT
-#define BORDER		4
-#define GAP		6
-#define TOP		24
+#define BORDER		5
+#define GAP		9
+#define TOP		33
 #define BOT		0
 #define FOCUSCOLOR	0x839496
 #define UNFOCUSCOLOR	0x536567
