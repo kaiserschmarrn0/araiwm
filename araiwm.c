@@ -720,6 +720,8 @@ arai_dive(void)
 		case XCB_CONFIGURE_NOTIFY: { configure(event); } break;
 		case XCB_BUTTON_PRESS: {
 			xcb_button_press_event_t *e = (xcb_button_press_event_t *)event;
+			if (!e->child || e->child == screen->root)
+				break;
 			carry = e->child;
 			mode = e->detail;
 			if (mode == 1) {
@@ -729,8 +731,8 @@ arai_dive(void)
 				xcb_query_pointer_reply_t *pointer = xcb_query_pointer_reply(connection,
 						xcb_query_pointer(connection, screen->root),
 						0);
-				xoff = pointer->root_x - geometry->x;
-				yoff = pointer->root_y - geometry->y;
+				xoff = pointer->root_x - geometry->x - BORDER;
+				yoff = pointer->root_y - geometry->y - BORDER;
 				printf("%d %d\n", xoff, yoff);
 				free(pointer);
 				free(geometry);
