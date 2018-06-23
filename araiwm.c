@@ -367,7 +367,7 @@ arai_snap(int arg)
 }
 
 static void
-arai_move(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geometry)
+arai_move(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geometry, int xoff, int yoff)
 {
 #ifdef MOVELIM
 	uint32_t values[] = {
@@ -385,8 +385,8 @@ arai_move(xcb_query_pointer_reply_t *pointer, xcb_get_geometry_reply_t *geometry
 #endif
 #ifndef MOVELIM
 	uint32_t values[] = {
-		pointer->root_x - geometry->width / 2 - BORDER,
-		pointer->root_y - geometry->height / 2 - BORDER
+		pointer->root_x - xoff - BORDER,
+		pointer->root_y - yoff - BORDER
 	};
 #endif
 	if (pointer->root_x < SNAP_X) {
@@ -632,9 +632,9 @@ arai_button_press(xcb_button_press_event_t *e)
 			values);
 	if (arai_find_client(focuswindow)->max == 1)
 		return;
-	if (e->detail == 1)
-		arai_warp_pointer(e->child, CENTER);
-	else
+	if (e->detail == 1) {
+		//arai_warp_pointer(e->child, CENTER);
+	} else
 		arai_warp_pointer(e->child, CORNER);
 	xcb_grab_pointer(connection,
 			0,
@@ -650,7 +650,7 @@ arai_button_press(xcb_button_press_event_t *e)
 }
 
 static void
-arai_motion_notify(xcb_generic_event_t *event, int mode, xcb_window_t carry)
+arai_motion_notify(xcb_generic_event_t *event, int mode, xcb_window_t carry, int xoff, int yoff)
 {
 	xcb_query_pointer_reply_t *pointer = xcb_query_pointer_reply(connection,
 			xcb_query_pointer(connection, screen->root),
@@ -659,7 +659,7 @@ arai_motion_notify(xcb_generic_event_t *event, int mode, xcb_window_t carry)
 			xcb_get_geometry(connection, carry),
 			NULL);
 	if (mode == 1)
-		arai_move(pointer, geometry);	
+		arai_move(pointer, geometry, xoff, yoff);	
 	else if (mode == 3)
 		arai_resize(pointer, geometry);
 	free(geometry);
@@ -710,7 +710,7 @@ arai_dive(void)
 {
 	xcb_generic_event_t *event;
 	xcb_window_t carry;
-	int mode;
+	int mode, xoff, yoff;
 	event = xcb_wait_for_event(connection);
 	switch (event->response_type & ~0x80) {
 		case XCB_ENTER_NOTIFY: { enter(event); } break;
@@ -722,9 +722,22 @@ arai_dive(void)
 			xcb_button_press_event_t *e = (xcb_button_press_event_t *)event;
 			carry = e->child;
 			mode = e->detail;
+			if (mode == 1) {
+				xcb_get_geometry_reply_t *geometry = xcb_get_geometry_reply(connection,
+					xcb_get_geometry(connection, carry),
+					NULL);
+				xcb_query_pointer_reply_t *pointer = xcb_query_pointer_reply(connection,
+						xcb_query_pointer(connection, screen->root),
+						0);
+				xoff = pointer->root_x - geometry->x;
+				yoff = pointer->root_y - geometry->y;
+				printf("%d %d\n", xoff, yoff);
+				free(pointer);
+				free(geometry);
+			}
 			arai_button_press(e);
 		} break;
-		case XCB_MOTION_NOTIFY: { arai_motion_notify(event, mode, carry); } break;
+		case XCB_MOTION_NOTIFY: { arai_motion_notify(event, mode, carry, xoff, yoff); } break;
 		case XCB_BUTTON_RELEASE: { xcb_ungrab_pointer(connection, XCB_CURRENT_TIME); } break;
 		case XCB_KEY_PRESS: { arai_key_press(event); };  break;
 	}
