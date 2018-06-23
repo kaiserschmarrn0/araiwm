@@ -11,10 +11,12 @@ XCB header files
 Configuration
 -------------
 araiwm is configured by editing config.h and recompiling
+if you would like to run programs before starting arai (i.e key managers, bars) add them to the startarai script
+(in this directory before installation, likely in /usr/local/bin after)
 
 
 Installation
 ------------
-after editing config.h, install using
+after completing the configuration steps described above, install using
 
 	make install clean
