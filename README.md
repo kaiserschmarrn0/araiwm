@@ -25,3 +25,8 @@ after completing the configuration steps described above, install using
 if you have a display manager, simply select arai at your login screen
 <br>
 otherwise, add `startarai` to your .xinitrc
+
+Todo
+----
+place bar above windows (bar list?)
+reparenting?
