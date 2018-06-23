@@ -20,3 +20,6 @@ Installation
 after completing the configuration steps described above, install using
 
 	make install clean
+
+if you have a display manager, simply select arai at your login screen
+otherwise, add `startarai` to your .xinitrc
