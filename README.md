@@ -26,7 +26,9 @@ after completing the configuration steps described above, install using
 and then add `startarai` to your .xinitrc
 <br>
 if you are using a display manager, install using
+
 	make install_dm clean
+
 instead
 
 Todo
