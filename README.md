@@ -22,7 +22,6 @@ after completing the configuration steps described above, install using
 
 	make install clean
 
-<br>
 and then add `startarai` to your .xinitrc
 <br>
 if you are using a display manager, install using
