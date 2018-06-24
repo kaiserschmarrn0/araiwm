@@ -23,11 +23,15 @@ install: araiwm
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
 	cp -f araiwm $(DESTDIR)$(PREFIX)/bin
 	chmod 755 $(DESTDIR)$(PREFIX)/bin/araiwm
-	cp -f startarai $(DESTDIR)$(PREFIX)/bin
-	chmod 755 $(DESTDIR)$(PREFIX)/bin/startarai
-
+	
 install_dm: install
-	cp -f arai.desktop /usr/share/xsessions
+	cp -f dm/startarai $(DESTDIR)$(PREFIX)/bin
+	chmod 755 $(DESTDIR)$(PREFIX)/bin/startarai
+	cp -f dm/arai.desktop /usr/share/xsessions
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/araiwm
+
+uninstall_dm: uninstall
+	rm -f $(DESTDIR)$(PREFIX)/bin/startarai
+	rm -f /usr/share/xsessions/startarai
