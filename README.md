@@ -26,5 +26,5 @@ edit the dm/startarai script with programs you want to run along araiwm, like a 
 
 Todo
 ----
-place bar above windows (bar list?)
+fix inconsistent function names
 reparenting?
