@@ -6,16 +6,11 @@
 #define GAP		9
 #define TOP		33
 #define BOT		0
-#define FOCUSCOLOR	0x839496
-#define UNFOCUSCOLOR	0x536567
+#define FOCUSCOLOR	0x9baeb1
+#define UNFOCUSCOLOR	0x12333b
 #define NUM_WS		4
 #define SNAP_X		4
 #define SNAP_Y		200
-
-//comment this to drag windows off screen
-//#define MOVELIM
-//comment this to disable dragging down to kill window
-//#define MOUSEKILL
 
 static const button buttons[] = {
 //	Modkey	Mouse button
