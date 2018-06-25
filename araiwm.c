@@ -6,7 +6,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include "config.h"
-#include <stdio.h>
 
 enum { FOCUS, UNFOCUS };
 enum { CENTER, CORNER };
@@ -101,23 +100,12 @@ arai_keygrab(void)
 }
 
 static void
-arai_print_clients(void) {
-	client *current = wslist[curws];
-	while (current) {
-		printf("%d ", current->id);
-		current = current->next;
-	}
-	printf("\n");
-}
-
-static void
 addclient(client* add, int ws)
 {
 	client *temp = wslist[ws];
 	wslist[ws] = malloc(sizeof(client));
 	*wslist[ws] = *add;
 	wslist[ws]->next = temp;
-	arai_print_clients();
 }
 
 static void
@@ -139,7 +127,6 @@ arai_remove_client(xcb_window_t window)
 	else
 		wslist[curws] = NULL;
 	free(current);
-	arai_print_clients();
 }
 
 static int
