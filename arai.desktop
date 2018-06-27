@@ -1,6 +1,0 @@
-[Desktop Entry]
-Name=araiwm
-Version=1.0
-Description=A cute and tiny window manager
-Exec=/usr/local/bin/startarai
-Type=Application
