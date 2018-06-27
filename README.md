@@ -2,11 +2,9 @@ araiwm - arai window manager
 ----------------------------
 manages windows no da
 
-
 Requirements
 ------------
 XCB header files
-
 
 Configuration
 -------------
@@ -26,5 +24,4 @@ edit the dm/startarai script with programs you want to run along araiwm, like a 
 
 Todo
 ----
-fix inconsistent function names
-reparenting?
+config branch

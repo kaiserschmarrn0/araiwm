@@ -18,7 +18,7 @@ typedef struct client {
 static void arai_kill();
 static void arai_center();
 static void arai_cycle();
-static void max();
+static void arai_max();
 static void arai_chws();
 static void arai_sendws();
 static void arai_snap();
