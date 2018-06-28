@@ -224,6 +224,8 @@ static void
 arai_snap(int arg)
 {
 	if (focuswindow == screen->root) return;
+	client *temp = arai_find_client(focuswindow);
+	if (temp && temp->max == 1) arai_max(focuswindow);
 	uint32_t values[] = {
 		0,
 		GAP + TOP,
