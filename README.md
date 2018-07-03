@@ -1,4 +1,4 @@
-![araiwm] (araiwm.png?raw=true "araiwm")
+![araiwm](https://raw.github.com/kaiserschmarrn0/araiwm/master/araiwm.png)
 
 araiwm - arai window manager
 ----------------------------
