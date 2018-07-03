@@ -1,16 +1,28 @@
 #include "types.h"
 
+//comment this if you don't want a config file
+//#define config
+
+#ifdef config
+#include "external_config.h"
+#endif
+
 #define MOD		XCB_MOD_MASK_4
 #define SHIFT		XCB_MOD_MASK_SHIFT
+#define NUM_WS		4
+
+#ifndef config
+
 #define BORDER		5
 #define GAP		9
 #define TOP		33
 #define BOT		0
 #define FOCUSCOLOR	0x9baeb1
 #define UNFOCUSCOLOR	0x12333b
-#define NUM_WS		4
 #define SNAP_X		4
 #define SNAP_Y		200
+
+#endif
 
 static const button buttons[] = {
 //	Modkey	Mouse button

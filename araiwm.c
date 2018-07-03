@@ -583,8 +583,17 @@ arai_cleanup(void)
 }
 
 int
-main(void)
+main(int argc, char **argv)
 {
+#ifdef config
+	if (argc > 2) {
+		printf("araiwm: too many arguments.\n");
+		return 0;
+	} else if (argc == 2) {
+		printf("araiwm: arg read.\n");
+		parse(argv[1]);
+	} else printf("araiwm: no config specified, using default.\n");
+#endif
 	arai_init();
 	for (;;) arai_dive();
 	atexit(arai_cleanup);
