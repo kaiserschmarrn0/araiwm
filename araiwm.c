@@ -116,7 +116,7 @@ arai_get_keysym(xcb_keycode_t keycode)
 }
 
 static void
-arai_get_atoms(char **names, xcb_atom_t *atoms, unsigned int count)
+arai_get_atoms(const char **names, xcb_atom_t *atoms, unsigned int count)
 {
     xcb_intern_atom_cookie_t cookies[count];
     xcb_intern_atom_reply_t *reply;
@@ -482,7 +482,7 @@ arai_button_press(xcb_generic_event_t *event)
     if (!e->child || e->child == screen->root || !arai_check_managed(e->child)) return;
 
     //restack window
-    uint32_t values[] = { XCB_STACK_MODE_ABOVE };
+    const uint32_t values[] = { XCB_STACK_MODE_ABOVE };
     xcb_configure_window(connection, e->child, XCB_CONFIG_WINDOW_STACK_MODE, values);
     client *found = arai_find_client(focuswindow);
     arai_restack(found);
@@ -622,11 +622,11 @@ main(int argc, char **argv)
     xcb_ewmh_set_supported(ewmh, 0, sizeof(atoms)/sizeof(*atoms), atoms);
 
     //setup icccm
-    char *WM_ATOM_NAME[] = {
+    const char *WM_ATOM_NAME[] = {
         "WM_PROTOCOLS",
         "WM_DELETE_WINDOW",
     };
-    char *NET_ATOM_NAME[] = {
+    const char *NET_ATOM_NAME[] = {
         "_NET_SUPPORTED",
         "_NET_WM_STATE_FULLSCREEN",
 	"_NET_WM_STATE",
@@ -684,6 +684,7 @@ main(int argc, char **argv)
     xcb_generic_event_t *event;
     for (;;) {
 	xcb_flush(connection);
+        if (xcb_connection_has_error(connection)) printf("araiwm: X11 connection broken\n");
 	event = xcb_wait_for_event(connection);
 	if (events[event->response_type & ~0x80]) events[event->response_type & ~0x80](event);
 	free(event);
