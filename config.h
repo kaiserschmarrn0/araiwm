@@ -1,18 +1,13 @@
-#include "types.h"
-
 //comment this if you don't want a config file
-//#define config
+#define config_file
 
-#ifdef config
-#include "external_config.h"
-#endif
+#include "araiwm.h"
 
 #define MOD		XCB_MOD_MASK_4
 #define SHIFT		XCB_MOD_MASK_SHIFT
 #define NUM_WS		4
 
-#ifndef config
-
+#ifndef config_file
 #define BORDER		5
 #define GAP		9
 #define TOP		33
@@ -21,7 +16,6 @@
 #define UNFOCUSCOLOR	0x12333b
 #define SNAP_X		4
 #define SNAP_Y		200
-
 #endif
 
 static const button buttons[] = {

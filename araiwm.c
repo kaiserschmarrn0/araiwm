@@ -11,14 +11,37 @@
 enum { FOCUS, UNFOCUS };
 enum { CENTER, CORNER };
 enum { LEFT, ULEFT, DLEFT, RIGHT, URIGHT, DRIGHT, FULL };
+enum { NET_SUPPORTED, NET_FULLSCREEN, NET_WM_STATE, NET_COUNT };
 
 static xcb_connection_t		*connection;
 static xcb_ewmh_connection_t 	*ewmh;
 static xcb_screen_t		*screen;
 static xcb_window_t		focuswindow;
-static xcb_atom_t 		atoms[2];
+static xcb_atom_t 		atoms[2], net_atoms[NET_COUNT];
 static client			*wslist[NUM_WS] = { NULL };
-static int			curws = 0;
+
+//focuswindow modification state data
+static int			curws = 0,
+				mode = 0,
+				xoff = 0,
+				yoff = 0;
+
+static void (*events[XCB_NO_OPERATION])(xcb_generic_event_t *event);
+
+static void
+arai_get_atoms(char **names, xcb_atom_t *atoms, unsigned int count)
+{
+	xcb_intern_atom_cookie_t cookies[count];
+	xcb_intern_atom_reply_t *reply;
+	for (int i = 0; i < count; i++) cookies[i] = xcb_intern_atom(connection,
+			0,
+			strlen(names[i]),
+			names[i]);
+	for (int i = 0; i < count; i++) {
+		reply = xcb_intern_atom_reply(connection, cookies[i], NULL);
+		if (reply) atoms[i] = reply->atom; free(reply);
+	}
+}
 
 static void
 arai_init(void)
@@ -61,7 +84,23 @@ arai_init(void)
 		atoms[i] = reply->atom;
 		free(reply);
 	}
+
+	char *NET_ATOM_NAME[] = { "_NET_SUPPORTED",
+		"_NET_WM_STATE_FULLSCREEN",
+		"_NET_WM_STATE",
+	};
 	
+	arai_get_atoms(NET_ATOM_NAME, net_atoms, NET_COUNT);
+
+	xcb_change_property(connection,
+			XCB_PROP_MODE_REPLACE,
+			screen->root,
+			net_atoms[NET_SUPPORTED],
+			XCB_ATOM_ATOM,
+			32,
+			NET_COUNT,
+			net_atoms);
+
 	//grab mouse buttons
 	for (int i = 0; i < sizeof(buttons)/sizeof(*buttons); i++)
 		xcb_grab_button(connection,
@@ -87,6 +126,10 @@ arai_init(void)
 		       	XCB_GRAB_MODE_ASYNC,
 			XCB_GRAB_MODE_ASYNC);
 	xcb_key_symbols_free(keysyms);
+
+	
+
+	xcb_flush(connection);
 }
 
 static void
@@ -458,7 +501,7 @@ arai_key_press(xcb_generic_event_t *event)
 }
 
 static void
-arai_button_press(xcb_button_press_event_t *e)
+arai_button(xcb_button_press_event_t *e)
 {
 	if (!(e->child && arai_check_managed(e->child) && e->child != screen->root)) return;
 	uint32_t values[] = { XCB_STACK_MODE_ABOVE };
@@ -480,7 +523,7 @@ arai_button_press(xcb_button_press_event_t *e)
 }
 
 static void
-arai_motion_notify(xcb_generic_event_t *event, int mode, xcb_window_t carry, int xoff, int yoff)
+arai_motion_notify(xcb_generic_event_t *event)
 {
 	xcb_query_pointer_reply_t *pointer = xcb_query_pointer_reply(connection,
 			xcb_query_pointer(connection, screen->root),
@@ -491,64 +534,103 @@ arai_motion_notify(xcb_generic_event_t *event, int mode, xcb_window_t carry, int
 }
 
 static void
+arai_client_message(xcb_generic_event_t *event)
+{
+	xcb_client_message_event_t *e = (xcb_client_message_event_t *)event;
+	if (e->type == net_atoms[NET_WM_STATE] && 
+			((unsigned)e->data.data32[1] == net_atoms[NET_FULLSCREEN] ||
+			 (unsigned)e->data.data32[2] == net_atoms[NET_FULLSCREEN]))
+		arai_max(e->window);
+}
+
+static void
+arai_enter_notify(xcb_generic_event_t *event)
+{
+	xcb_enter_notify_event_t *e = (xcb_enter_notify_event_t *)event;
+	arai_focus(e->event, FOCUS);
+}
+
+static void
+arai_map_notify(xcb_generic_event_t *event)
+{
+	xcb_map_notify_event_t *e = (xcb_map_notify_event_t *)event;
+	if (!e->override_redirect && arai_check_managed(e->window) &&
+			arai_find_client(e->window) == NULL) arai_wrap(e->window);
+	xcb_map_window(connection, e->window);
+}
+
+static void
+arai_unmap_notify(xcb_generic_event_t *event)
+{
+	xcb_map_notify_event_t *e = (xcb_map_notify_event_t *)event;
+	arai_remove_client(e->window);
+}
+
+static void
+arai_configure_notify(xcb_generic_event_t *event)
+{
+	xcb_configure_notify_event_t *e = (xcb_configure_notify_event_t *)event;
+	if (e->window != focuswindow) arai_focus(e->window, UNFOCUS);
+	arai_focus(focuswindow, FOCUS);
+}
+
+static void
+arai_button_press(xcb_generic_event_t *event)
+{
+	xcb_button_press_event_t *e = (xcb_button_press_event_t *)event;
+	if (!e->child || e->child == screen->root) return;
+	//carry = e->child;
+	mode = e->detail;
+	xcb_get_geometry_reply_t *geometry = xcb_get_geometry_reply(connection,
+			xcb_get_geometry(connection, focuswindow),
+			NULL);
+	if (mode == 1) {
+		xcb_query_pointer_reply_t *pointer = xcb_query_pointer_reply(connection,
+				xcb_query_pointer(connection, screen->root),
+				0);
+		xoff = pointer->root_x - geometry->x - BORDER;
+		yoff = pointer->root_y - geometry->y - BORDER;
+		free(pointer);
+	} else {
+		xoff = geometry->x;
+		yoff = geometry->y;
+	}
+	free(geometry);
+	arai_button(e);
+}
+
+static void
+arai_button_release(xcb_generic_event_t *event)
+{
+	printf("hello what the fuck\n");
+	xcb_ungrab_pointer(connection, XCB_CURRENT_TIME);
+}
+
+static void
+arai_set_events(void)
+{
+	for (int i = 0; i < XCB_NO_OPERATION; i++) events[i] = NULL;
+	events[XCB_BUTTON_PRESS]	= arai_button_press;
+	events[XCB_BUTTON_RELEASE]	= arai_button_release;
+	events[XCB_MOTION_NOTIFY]	= arai_motion_notify;
+	events[XCB_CLIENT_MESSAGE]	= arai_client_message;
+	events[XCB_CONFIGURE_NOTIFY]	= arai_configure_notify;
+	events[XCB_KEY_PRESS]		= arai_key_press;
+	events[XCB_MAP_NOTIFY]		= arai_map_notify;
+	events[XCB_UNMAP_NOTIFY]	= arai_unmap_notify;
+	events[XCB_ENTER_NOTIFY]	= arai_enter_notify;
+}
+
+static void
 arai_dive(void)
 {
 	xcb_generic_event_t *event;
-	xcb_window_t carry;
-	int mode, xoff, yoff;
-	event = xcb_wait_for_event(connection);
-	switch (event->response_type & ~0x80) {
-		case XCB_ENTER_NOTIFY: {
-			xcb_enter_notify_event_t *e = (xcb_enter_notify_event_t *)event;
-			arai_focus(e->event, FOCUS);
-		} break;
-		case XCB_MAP_NOTIFY: {
-			xcb_map_notify_event_t *e = (xcb_map_notify_event_t *)event;
-			if (!e->override_redirect && arai_check_managed(e->window) &&
-					arai_find_client(e->window) == NULL) arai_wrap(e->window);
-			xcb_map_window(connection, e->window);
-		} break;
-		case XCB_UNMAP_NOTIFY: {
-			xcb_map_notify_event_t *e = (xcb_map_notify_event_t *)event;
-			arai_remove_client(e->window);
-		} break;
-		case XCB_DESTROY_NOTIFY: {
-			xcb_destroy_notify_event_t *e = (xcb_destroy_notify_event_t *)event;
-			xcb_kill_client(connection, e->window);
- 		} break;
-		case XCB_CONFIGURE_NOTIFY: {
-			xcb_configure_notify_event_t *e = (xcb_configure_notify_event_t *)event;
-			if (e->window != focuswindow) arai_focus(e->window, UNFOCUS);
-			arai_focus(focuswindow, FOCUS);
- 		} break;
-		case XCB_BUTTON_PRESS: {
-			xcb_button_press_event_t *e = (xcb_button_press_event_t *)event;
-			if (!e->child || e->child == screen->root) break;
-			carry = e->child;
-			mode = e->detail;
-			xcb_get_geometry_reply_t *geometry = xcb_get_geometry_reply(connection,
-					xcb_get_geometry(connection, carry),
-					NULL);
-			if (mode == 1) {
-				xcb_query_pointer_reply_t *pointer = xcb_query_pointer_reply(connection,
-						xcb_query_pointer(connection, screen->root),
-						0);
-				xoff = pointer->root_x - geometry->x - BORDER;
-				yoff = pointer->root_y - geometry->y - BORDER;
-				free(pointer);
-			} else {
-				xoff = geometry->x;
-				yoff = geometry->y;
-			}
-			free(geometry);
-			arai_button_press(e);
-		} break;
-		case XCB_MOTION_NOTIFY: arai_motion_notify(event, mode, carry, xoff, yoff); 	break;
-		case XCB_BUTTON_RELEASE: xcb_ungrab_pointer(connection, XCB_CURRENT_TIME);	break;
-		case XCB_KEY_PRESS: arai_key_press(event);  					break;
+	for (;;) {
+		event = xcb_wait_for_event(connection);
+		if (events[event->response_type & ~0x80]) events[event->response_type & ~0x80](event);
+		xcb_flush(connection);
+		free(event);
 	}
-	xcb_flush(connection);
-	free(event);
 }
 
 static void
@@ -585,7 +667,7 @@ arai_cleanup(void)
 int
 main(int argc, char **argv)
 {
-#ifdef config
+#ifdef config_file
 	if (argc > 2) {
 		printf("araiwm: too many arguments.\n");
 		return 0;
@@ -595,7 +677,8 @@ main(int argc, char **argv)
 	} else printf("araiwm: no config specified, using default.\n");
 #endif
 	arai_init();
-	for (;;) arai_dive();
+	arai_set_events();
+	arai_dive();
 	atexit(arai_cleanup);
 	return 0;
 }

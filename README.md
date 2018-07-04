@@ -28,7 +28,3 @@ Display Managers
 edit the dm/startarai script with programs you want to run along araiwm, like a hotkey manager, for example, then install using
 	
 	make install_dm clean
-
-Todo
-----
-config branch
