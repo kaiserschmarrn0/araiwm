@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <string.h>
 #include "config.h"
 
 enum { FOCUS, UNFOCUS };
@@ -26,6 +27,28 @@ static int  curws = 0,
 	    mode = 0,
 	    xoff = 0,
 	    yoff = 0;
+
+#ifdef CONFIG_FILE
+static uint32_t BORDER = 5,
+     GAP = 9,
+     TOP = 33,
+     BOT = 0,
+     SNAP_X = 4,
+     SNAP_Y = 200,
+     FOCUSCOLOR = 0x9baeb1,
+     UNFOCUSCOLOR = 0x12333b;
+
+static const confitem items[] = {
+    { "border",	&BORDER       },
+    { "gap",	&GAP          },
+    { "top",	&TOP   	      },
+    { "bot",	&BOT          },
+    { "snap_x",	&SNAP_X       },
+    { "snap_y",	&SNAP_Y       },
+    { "focuscol",	&FOCUSCOLOR   },
+    { "unfocuscol",	&UNFOCUSCOLOR },
+};
+#endif
 
 //event handler function array
 static void (*events[XCB_NO_OPERATION])(xcb_generic_event_t *event);
@@ -218,41 +241,6 @@ arai_snap(int arg)
 }
 
 static void
-arai_move(xcb_query_pointer_reply_t *pointer, int xoff, int yoff)
-{
-    const uint32_t values[] = {
-    	pointer->root_x - xoff - BORDER,
-    	pointer->root_y - yoff - BORDER
-    };
-    if (pointer->root_x < SNAP_X) {
-	if (pointer->root_y < SNAP_Y + TOP) arai_snap(ULEFT);
-    	else if (pointer->root_y > screen->height_in_pixels - SNAP_Y - BOT) arai_snap(DLEFT);
-    	else arai_snap(LEFT);
-    } else if (pointer->root_x > screen->width_in_pixels - SNAP_X) {
-    	if (pointer->root_y < SNAP_Y + TOP) arai_snap(URIGHT);
-    	else if (pointer->root_y > screen->height_in_pixels - SNAP_Y - BOT) arai_snap(DRIGHT);
-    	else arai_snap(RIGHT);
-    } else if (pointer->root_y < SNAP_X) arai_snap(FULL);
-    else xcb_configure_window(connection,
-    	    focuswindow,
-    	    XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y,
-    	    values);
-}
-
-static void
-arai_resize(xcb_query_pointer_reply_t *pointer, int xoff, int yoff)
-{
-    const uint32_t values[2] = {
-    	(pointer->root_x < xoff + 64) ? 64 - 2 * BORDER : (pointer->root_x - xoff - 2 * BORDER + 1),
-    	(pointer->root_y < yoff + 64) ? 64 - 2 * BORDER : (pointer->root_y - yoff - 2 * BORDER + 1)
-    };
-    xcb_configure_window(connection,
-    	    focuswindow,
-    	    XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT,
-    	    values);
-}
-
-static void
 arai_center(int arg)
 {
     if (focuswindow == screen->root) return;
@@ -398,16 +386,38 @@ arai_max(int arg)
 }
 
 static void
-arai_key_press(xcb_generic_event_t *event)
+arai_move(xcb_query_pointer_reply_t *pointer, int xoff, int yoff)
 {
-    xcb_key_press_event_t *ev = (xcb_key_press_event_t *)event;
-    xcb_keysym_t keysym = arai_get_keysym(ev->detail);
-    for (int i = 0; i < sizeof(keys)/sizeof(*keys); i++)
-    	if (keysym == keys[i].key &&
-    		keys[i].mod == ev->state) {
-	    keys[i].function(keys[i].arg);
-	    break;
-        }
+    const uint32_t values[] = {
+    	pointer->root_x - xoff - BORDER,
+    	pointer->root_y - yoff - BORDER
+    };
+    if (pointer->root_x < SNAP_X) {
+	if (pointer->root_y < SNAP_Y + TOP) arai_snap(ULEFT);
+    	else if (pointer->root_y > screen->height_in_pixels - SNAP_Y - BOT) arai_snap(DLEFT);
+    	else arai_snap(LEFT);
+    } else if (pointer->root_x > screen->width_in_pixels - SNAP_X) {
+    	if (pointer->root_y < SNAP_Y + TOP) arai_snap(URIGHT);
+    	else if (pointer->root_y > screen->height_in_pixels - SNAP_Y - BOT) arai_snap(DRIGHT);
+    	else arai_snap(RIGHT);
+    } else if (pointer->root_y < SNAP_X) arai_snap(FULL);
+    else xcb_configure_window(connection,
+    	    focuswindow,
+    	    XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y,
+    	    values);
+}
+
+static void
+arai_resize(xcb_query_pointer_reply_t *pointer, int xoff, int yoff)
+{
+    const uint32_t values[2] = {
+    	(pointer->root_x < xoff + 64) ? 64 - 2 * BORDER : (pointer->root_x - xoff - 2 * BORDER + 1),
+    	(pointer->root_y < yoff + 64) ? 64 - 2 * BORDER : (pointer->root_y - yoff - 2 * BORDER + 1)
+    };
+    xcb_configure_window(connection,
+    	    focuswindow,
+    	    XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT,
+    	    values);
 }
 
 static void
@@ -419,16 +429,6 @@ arai_motion_notify(xcb_generic_event_t *event)
     if (mode == 1) arai_move(pointer, xoff, yoff);	
     else arai_resize(pointer, xoff, yoff);
     free(pointer);
-}
-
-static void
-arai_client_message(xcb_generic_event_t *event)
-{
-    xcb_client_message_event_t *e = (xcb_client_message_event_t *)event;
-    if (e->type == net_atoms[NET_WM_STATE] && 
-	    ((unsigned)e->data.data32[1] == net_atoms[NET_FULLSCREEN] ||
-	    (unsigned)e->data.data32[2] == net_atoms[NET_FULLSCREEN]))
-	arai_max(e->window);
 }
 
 static void
@@ -463,10 +463,32 @@ arai_configure_notify(xcb_generic_event_t *event)
 }
 
 static void
+arai_key_press(xcb_generic_event_t *event)
+{
+    xcb_key_press_event_t *ev = (xcb_key_press_event_t *)event;
+    xcb_keysym_t keysym = arai_get_keysym(ev->detail);
+    for (int i = 0; i < sizeof(keys)/sizeof(*keys); i++)
+    	if (keysym == keys[i].key &&
+    		keys[i].mod == ev->state) {
+	    keys[i].function(keys[i].arg);
+	    break;
+        }
+}
+
+static void
 arai_button_press(xcb_generic_event_t *event)
 {
     xcb_button_press_event_t *e = (xcb_button_press_event_t *)event;
     if (!e->child || e->child == screen->root || !arai_check_managed(e->child)) return;
+
+    //restack window
+    uint32_t values[] = { XCB_STACK_MODE_ABOVE };
+    xcb_configure_window(connection, e->child, XCB_CONFIG_WINDOW_STACK_MODE, values);
+    client *found = arai_find_client(focuswindow);
+    arai_restack(found);
+    if (found->max == 1) return;
+
+    //set mode data
     mode = e->detail;
     xcb_get_geometry_reply_t *geometry = xcb_get_geometry_reply(connection,
             xcb_get_geometry(connection, focuswindow),
@@ -484,10 +506,6 @@ arai_button_press(xcb_generic_event_t *event)
         arai_warp_pointer(e->child, CORNER);
     }
     free(geometry);
-    uint32_t values[] = { XCB_STACK_MODE_ABOVE };
-    xcb_configure_window(connection, e->child, XCB_CONFIG_WINDOW_STACK_MODE, values);
-    arai_restack(arai_find_client(focuswindow));
-    if (arai_find_client(focuswindow)->max == 1) return;
     xcb_grab_pointer(connection,
     	    0,
 	    screen->root,
@@ -504,8 +522,17 @@ arai_button_press(xcb_generic_event_t *event)
 static void
 arai_button_release(xcb_generic_event_t *event)
 {
-    printf("hello what the fuck\n");
     xcb_ungrab_pointer(connection, XCB_CURRENT_TIME);
+}
+
+static void
+arai_client_message(xcb_generic_event_t *event)
+{
+    xcb_client_message_event_t *e = (xcb_client_message_event_t *)event;
+    if (e->type == net_atoms[NET_WM_STATE] && 
+	    ((unsigned)e->data.data32[1] == net_atoms[NET_FULLSCREEN] ||
+	    (unsigned)e->data.data32[2] == net_atoms[NET_FULLSCREEN]))
+	arai_max(e->window);
 }
 
 static void
@@ -542,14 +569,28 @@ arai_cleanup(void)
 int
 main(int argc, char **argv)
 {
-#ifdef config_file
+#ifdef CONFIG_FILE
     //read cli args
     if (argc > 2) {
     	printf("araiwm: too many arguments.\n");
     	return 0;
     } else if (argc == 2) {
-    	printf("araiwm: arg read.\n");
-    	parse(argv[1]);
+    	printf("araiwm: path to config: %s\n", argv[1]);
+        char scan[STR_MAX];
+        uint32_t val;
+        FILE *fconf;
+        if (fconf = fopen(argv[1], "r")) {
+            while (!feof(fconf)) {
+                fscanf(fconf, "%s ", &scan);
+                if (strcmp(scan, "unfocuscol") == 0 || strcmp(scan, "focuscol") == 0)
+                    fscanf(fconf, "= %x", &val);
+                else fscanf(fconf, "= %d", &val);
+    	        printf("araiwm: %s = %d\n", scan, val);
+    	        for (int i = 0; i < sizeof(items)/sizeof(*items); i++)
+                    if (strcmp(scan, items[i].key) == 0) *items[i].var = val;
+            }
+        fclose(fconf);
+        } else printf("araiwm: failed to open %s\n", argv[1]);
     } else printf("araiwm: no config specified, using default.\n");
 #endif
 
@@ -627,9 +668,7 @@ main(int argc, char **argv)
 		XCB_GRAB_MODE_ASYNC);
     xcb_key_symbols_free(keysyms);
 
-    xcb_flush(connection);
-
-    //register events;
+    //register events
     for (int i = 0; i < XCB_NO_OPERATION; i++) events[i] = NULL;
     events[XCB_BUTTON_PRESS]	    = arai_button_press;
     events[XCB_BUTTON_RELEASE]	    = arai_button_release;
@@ -644,9 +683,9 @@ main(int argc, char **argv)
     //event loop
     xcb_generic_event_t *event;
     for (;;) {
+	xcb_flush(connection);
 	event = xcb_wait_for_event(connection);
 	if (events[event->response_type & ~0x80]) events[event->response_type & ~0x80](event);
-	xcb_flush(connection);
 	free(event);
     }
 

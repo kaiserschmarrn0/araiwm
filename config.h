@@ -1,13 +1,16 @@
 //comment this if you don't want a config file
-#define config_file
+#define CONFIG_FILE
 
 #include "araiwm.h"
+
+//maximum path length for config file
+#define STR_MAX         255
 
 #define MOD		XCB_MOD_MASK_4
 #define SHIFT		XCB_MOD_MASK_SHIFT
 #define NUM_WS		4
 
-#ifndef config_file
+#ifndef CONFIG_FILE
 #define BORDER		5
 #define GAP		9
 #define TOP		33
