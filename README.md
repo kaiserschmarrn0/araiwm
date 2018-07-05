@@ -22,6 +22,7 @@ after completing the configuration steps described above, install using
 
 Launching araiwm
 ----------------
+if config file is enabled, araiwm takes the file's path as it's only arg
 
 Display Managers
 ----------------
