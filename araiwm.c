@@ -352,14 +352,14 @@ arai_max(int arg)
 	    	0,
 		screen->width_in_pixels,
 		screen->height_in_pixels,
+		0,
 		XCB_STACK_MODE_ABOVE,
-		0
 	};
         xcb_configure_window(connection,
 	        focuswindow,
 		XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y |
 		XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT |
-    		XCB_CONFIG_WINDOW_STACK_MODE | XCB_CONFIG_WINDOW_BORDER_WIDTH,
+    		XCB_CONFIG_WINDOW_BORDER_WIDTH | XCB_CONFIG_WINDOW_STACK_MODE,
 	    	values);
 	found->x = geometry->x;
 	found->y = geometry->y;
@@ -680,6 +680,8 @@ main(int argc, char **argv)
     events[XCB_UNMAP_NOTIFY]	    = arai_unmap_notify;
     events[XCB_ENTER_NOTIFY]	    = arai_enter_notify;
     
+    atexit(arai_cleanup);
+
     //event loop
     xcb_generic_event_t *event;
     for (;;) {
@@ -690,6 +692,5 @@ main(int argc, char **argv)
 	free(event);
     }
 
-    atexit(arai_cleanup);
     return 0;
 }
