@@ -331,7 +331,7 @@ arai_chws(int ws)
 static void
 arai_sendws(int ws)
 {
-    if (focuswindow == screen->root) return;
+    if (focuswindow == screen->root || ws == curws) return;
     client *oldclient = arai_find_client(focuswindow);
     arai_add_client(oldclient, ws);
     xcb_unmap_window(connection, focuswindow);
@@ -530,8 +530,8 @@ arai_client_message(xcb_generic_event_t *event)
 {
     xcb_client_message_event_t *e = (xcb_client_message_event_t *)event;
     if (e->type == net_atoms[NET_WM_STATE] && 
-	    ((unsigned)e->data.data32[1] == net_atoms[NET_FULLSCREEN] ||
-	    (unsigned)e->data.data32[2] == net_atoms[NET_FULLSCREEN]))
+	    ((unsigned)e->data.data32[2] == net_atoms[NET_FULLSCREEN] ||
+            (unsigned)e->data.data32[1] == net_atoms[NET_FULLSCREEN]))
 	arai_max(e->window);
 }
 
