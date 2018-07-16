@@ -388,7 +388,6 @@ arai_maxhelper(int arg)
 {
     client* found;
     if (focuswindow == screen->root || !(found = arai_find_client(focuswindow))) return;
-
     if (arg) {
         if (!found->max) {
             if (found->app_max) {
@@ -413,46 +412,6 @@ arai_maxhelper(int arg)
             }
         }
     }
-
-    /*if (!found->max) {
-    	xcb_get_geometry_reply_t *geometry = xcb_get_geometry_reply(connection,
-    		xcb_get_geometry(connection, focuswindow),
-    		NULL);
-    	const uint32_t values[] = {
-		0,
-	    	0,
-		screen->width_in_pixels,
-		screen->height_in_pixels,
-		0,
-		XCB_STACK_MODE_ABOVE,
-	};
-        xcb_configure_window(connection,
-	        focuswindow,
-		XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y |
-		XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT |
-    		XCB_CONFIG_WINDOW_BORDER_WIDTH | XCB_CONFIG_WINDOW_STACK_MODE,
-	    	values);
-	found->x = geometry->x;
-	found->y = geometry->y;
-        found->w = geometry->width;
-        found->h = geometry->height;
-	arai_restack(found);
-    } else {
-	const uint32_t values[] = {
-	    found->x,
-	    found->y,
-    	    found->w,
-	    found->h,
-	    BORDER
-	};
-        xcb_configure_window(connection,
-		focuswindow,
-	    	XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y |
-	    	XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT |
-	    	XCB_CONFIG_WINDOW_BORDER_WIDTH,
-		values);
-    }
-    found->max = !found->max;*/
 }
 
 static void
@@ -603,16 +562,8 @@ arai_client_message(xcb_generic_event_t *event)
     xcb_client_message_event_t *e = (xcb_client_message_event_t *)event;
     if (e->type == net_atoms[NET_WM_STATE] && 
 	    ((unsigned)e->data.data32[2] == net_atoms[NET_FULLSCREEN] ||
-            (unsigned)e->data.data32[1] == net_atoms[NET_FULLSCREEN])) {
+            (unsigned)e->data.data32[1] == net_atoms[NET_FULLSCREEN]))
         arai_maxhelper(EXTERN);
-        printf("beep boop\n");
-    }
-        /*if (e->data.data32[0] == 0 && !found->max) {
-            arai_max(1);
-        } else if (e->data.data32[0] == 1 && found->max) {
-            arai_max(1);
-        } else
-            arai_max(1);*/
 }
 
 static void
