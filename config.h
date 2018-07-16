@@ -33,7 +33,7 @@ static const key keys[] = {
 	{ MOD, 		XK_g,	arai_center, 	0 },
 	{ MOD, 		XK_Tab,	arai_cycle,	0 },
 	{ MOD, 		XK_f, 	arai_snap,	7 },
-	{ MOD | SHIFT, 	XK_f,	arai_max,	0 },
+	{ MOD | SHIFT, 	XK_f,	arai_maxhelper,	0 },
 	{ MOD, 		XK_1,	arai_chws, 	0 },
 	{ MOD, 		XK_2, 	arai_chws, 	1 },
 	{ MOD, 		XK_3, 	arai_chws, 	2 },

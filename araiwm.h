@@ -12,7 +12,7 @@ typedef struct {
 typedef struct client {
     xcb_window_t id;
     struct client *next;
-    int max, x, y, w, h;
+    int max, app_max, x, y, w, h;
 } client;
 
 typedef struct {
@@ -30,7 +30,7 @@ typedef struct {
 static void arai_kill();
 static void arai_center();
 static void arai_cycle();
-static void arai_max();
+static void arai_maxhelper();
 static void arai_chws();
 static void arai_sendws();
 static void arai_snap();

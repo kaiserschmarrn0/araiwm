@@ -11,6 +11,7 @@
 
 enum { FOCUS, UNFOCUS };
 enum { CENTER, CORNER };
+enum { INTERN, EXTERN };
 enum { LEFT, ULEFT, DLEFT, RIGHT, URIGHT, DRIGHT, FULL };
 enum { WM_PROTOCOLS, WM_DELETE_WINDOW, WM_COUNT };
 enum { NET_SUPPORTED, NET_FULLSCREEN, NET_WM_STATE, NET_COUNT };
@@ -180,6 +181,7 @@ arai_wrap(xcb_window_t window)
     client new;
     new.id = window;
     new.max = 0;
+    new.app_max = 0;
     arai_add_client(&new, curws);
 }
 
@@ -203,7 +205,7 @@ arai_snap(int arg)
 {
     if (focuswindow == screen->root) return;
     client *temp = arai_find_client(focuswindow);
-    if (temp && temp->max == 1) arai_max(focuswindow);
+    if (temp && temp->max == 1) arai_maxhelper(0);
     uint32_t values[] = {
     	0,
     	GAP + TOP,
@@ -245,7 +247,7 @@ arai_center(int arg)
 {
     if (focuswindow == screen->root) return;
     client *temp = arai_find_client(focuswindow);
-    if (temp && temp->max == 1) arai_max(focuswindow);
+    if (temp && temp->max == 1) arai_maxhelper(0);
     xcb_get_geometry_reply_t *geometry = xcb_get_geometry_reply(connection,
     	    xcb_get_geometry(connection, focuswindow),
     	    NULL);
@@ -339,11 +341,80 @@ arai_sendws(int ws)
 }
 
 static void
-arai_max(int arg)
+arai_max(client *found) {
+    xcb_get_geometry_reply_t *geometry = xcb_get_geometry_reply(connection,
+            xcb_get_geometry(connection, focuswindow),
+    	    NULL);
+    const uint32_t values[] = {
+	    0,
+	    0,
+	    screen->width_in_pixels,
+	    screen->height_in_pixels,
+	    0,
+	    XCB_STACK_MODE_ABOVE,
+    };
+    xcb_configure_window(connection,
+            focuswindow,
+	    XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y |
+	    XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT |
+    	    XCB_CONFIG_WINDOW_BORDER_WIDTH | XCB_CONFIG_WINDOW_STACK_MODE,
+	    values);
+    found->x = geometry->x;
+    found->y = geometry->y;
+    found->w = geometry->width;
+    found->h = geometry->height;
+    arai_restack(found);
+}
+
+static void
+arai_unmax(client *found) {
+    const uint32_t values[] = {
+        found->x,
+        found->y,
+        found->w,
+	found->h,
+	BORDER
+    };
+    xcb_configure_window(connection,
+	    focuswindow,
+	    XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y |
+	    XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT |
+	    XCB_CONFIG_WINDOW_BORDER_WIDTH,
+	    values);
+}
+
+static void
+arai_maxhelper(int arg)
 {
     client* found;
     if (focuswindow == screen->root || !(found = arai_find_client(focuswindow))) return;
-    if (found->max == 0) {
+
+    if (arg) {
+        if (!found->max) {
+            if (found->app_max) {
+                found->app_max = 0;
+                arai_unmax(found);
+            } else {
+                found->app_max = 1;
+                arai_max(found);
+            }
+        }
+    } else {
+        if (found->app_max) {
+            if (found->max) found->max = 0;
+            else found->max = 1;
+        } else {
+            if (found->max) {
+                found->max = 0;
+                arai_unmax(found);
+            } else {
+                found->max = 1;
+                arai_max(found);
+            }
+        }
+    }
+
+    /*if (!found->max) {
     	xcb_get_geometry_reply_t *geometry = xcb_get_geometry_reply(connection,
     		xcb_get_geometry(connection, focuswindow),
     		NULL);
@@ -364,8 +435,7 @@ arai_max(int arg)
 	found->x = geometry->x;
 	found->y = geometry->y;
         found->w = geometry->width;
-	found->h = geometry->height;
-	found->max = 1;
+        found->h = geometry->height;
 	arai_restack(found);
     } else {
 	const uint32_t values[] = {
@@ -381,8 +451,8 @@ arai_max(int arg)
 	    	XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT |
 	    	XCB_CONFIG_WINDOW_BORDER_WIDTH,
 		values);
-	found->max = 0;
     }
+    found->max = !found->max;*/
 }
 
 static void
@@ -528,11 +598,21 @@ arai_button_release(xcb_generic_event_t *event)
 static void
 arai_client_message(xcb_generic_event_t *event)
 {
+    client *found;
+    if (!(found = arai_find_client(focuswindow))) return;
     xcb_client_message_event_t *e = (xcb_client_message_event_t *)event;
     if (e->type == net_atoms[NET_WM_STATE] && 
 	    ((unsigned)e->data.data32[2] == net_atoms[NET_FULLSCREEN] ||
-            (unsigned)e->data.data32[1] == net_atoms[NET_FULLSCREEN]))
-	arai_max(e->window);
+            (unsigned)e->data.data32[1] == net_atoms[NET_FULLSCREEN])) {
+        arai_maxhelper(EXTERN);
+        printf("beep boop\n");
+    }
+        /*if (e->data.data32[0] == 0 && !found->max) {
+            arai_max(1);
+        } else if (e->data.data32[0] == 1 && found->max) {
+            arai_max(1);
+        } else
+            arai_max(1);*/
 }
 
 static void
