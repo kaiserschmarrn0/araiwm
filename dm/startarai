@@ -1,3 +1,0 @@
-# add any commands you want before the last line, hotman is the example here
-# hotman &
-exec /usr/local/bin/araiwm

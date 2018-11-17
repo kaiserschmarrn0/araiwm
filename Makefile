@@ -1,37 +1,23 @@
-include config.mk
-
 SRC = araiwm.c
-DEPS = config.h types.h
 OBJ = $(SRC:.c=.o)
+
+PREFIX = /usr/local
 
 all: araiwm
 
 .c.o:
-	$(CC) $(STCFLAGS) -c $<
-
-araiwm.o: config.h
-
-$(OBJ): config.h config.mk
+	$(CC) -I/usr/X11R6/include -c  $<
 
 araiwm: $(OBJ)
-	$(CC) -o $@ $(OBJ) $(STCFLAGS) $(STLDFLAGS)
+	$(CC) -o $@ $(OBJ) -I/usr/X11R6/include -L/usr/X11R6/lib -lxcb -lxcb-keysyms -lxcb-ewmh -lxcb-icccm
 
-clean:
-	rm -f araiwm $(OBJ)
-
-install: araiwm
+install:
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
 	cp -f araiwm $(DESTDIR)$(PREFIX)/bin
 	chmod 755 $(DESTDIR)$(PREFIX)/bin/araiwm
-	
-install_dm: install
-	cp -f dm/startarai $(DESTDIR)$(PREFIX)/bin
-	chmod 755 $(DESTDIR)$(PREFIX)/bin/startarai
-	cp -f dm/arai.desktop /usr/share/xsessions
 
 uninstall:
-	rm -f $(DESTDIR)$(PREFIX)/bin/araiwm
+	rm -f $(DESTDIR)$(PREFIX)/bin/araiwm $(OBJ)
 
-uninstall_dm: uninstall
-	rm -f $(DESTDIR)$(PREFIX)/bin/startarai
-	rm -f /usr/share/xsessions/startarai
+clean:
+	rm -f araiwm $(OBJ)
