@@ -1,36 +1,70 @@
+//main xcb library
 #include <xcb/xcb.h>
+
+//xcb library for the EWMH standard
 #include <xcb/xcb_ewmh.h>
+
+//xcb library for the ICCCM standard
 #include <xcb/xcb_icccm.h>
+
+//xcb library for keyboard input (manages system specifc keycodes)
 #include <xcb/xcb_keysyms.h>
+
+//X11 library that holds all keysyms (defines system unspecific keysyms)
 #include <X11/keysym.h>
+
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
+#include <stdio.h>
 
 /*
 the top left corner includes the border, but the width/height dont!!
 */
 
+//size of array macro
 #define LEN(A) sizeof(A)/sizeof(*A)
 
+//the number of workspaces
 #define NUM_WS 4
 
-#define MOVE 0
-#define RESZ 1
+/* window manager state masks
+if the window manager state is 0, then we are not moving or resizing a window */
+#define MOVE 1
+#define RESZ 2
 
+/* focus or unfocus specifications
+passed to the function that focuses a client to determine whether we are giving focus to or removing focus from a client */
 #define FOCUS 0
 #define UNFOCUS 1
 
-//state masks
-#define SNAP 1
-#define FULL 2
-
+//modifiers for keyboard and mouse input
 #define MOD XCB_MOD_MASK_4
 #define SHIFT XCB_MOD_MASK_SHIFT
 
+/* assigns indices to atom names
+useful because we store the first atoms in a reference array, using the the final one as the array's size */
 enum { WM_PROTOCOLS, WM_DELETE_WINDOW, WM_COUNT };
 enum { NET_SUPPORTED, NET_FULLSCREEN, NET_WM_STATE, NET_COUNT };
 
+//structure that represents a client we manage
+typedef struct client_t {
+ xcb_window_t id;
+ struct client_t *next,
+                 *prev;
+
+ // structures that indicate the position and size of the window before it was tiled or maximized
+ xcb_rectangle_t snap_geom,
+                 full_geom;
+ 
+ //booleans that track the window state
+ bool ignore_unmap,
+      snap,
+      e_full,
+      i_full;
+} client_t;
+
+//structure that associates a keybind with a function
 typedef struct {
  uint16_t mod;
  xcb_keysym_t key;
@@ -38,21 +72,10 @@ typedef struct {
  int arg;
 } keybind_t;
 
-typedef struct client_t {
- xcb_window_t id;
- struct client_t *next, *prev;
- xcb_rectangle_t snap_geom,
-                 full_geom;
- bool ignore_unmap,
-      snap,
-      e_full,
-      i_full;
-} client_t;
-
 //xcb boilerplate
 static xcb_connection_t *conn;
-static xcb_screen_t *scr;
 static xcb_ewmh_connection_t *ewmh;
+static xcb_screen_t *scr;
 static xcb_atom_t wm_atoms[WM_COUNT], net_atoms[NET_COUNT];
 static xcb_key_symbols_t *keysyms;
 
@@ -61,21 +84,23 @@ static client_t *stack[NUM_WS] = { NULL },
                 *fwin[NUM_WS] = { NULL };
 
 //wm state
-static int curws = 0;
-static int state = 0,
+static int curws = 0,
+           state = 0,
            x,
            y;
 
+//alt-tabbing data
 bool tabbing = false;
-client_t *marker = NULL;
+client_t *marker = NULL,
+         *cursed = NULL;
 
 //config values
-uint32_t TOP = 0,
-         BOT = 33,
-         GAP = 9,
-         BORDER = 6,
-         FOCUSCOL = 0x9baeb1,
-         UNFOCUSCOL = 0x12333b,
+uint32_t TOP = 0,               //margin for top statusbar
+         BOT = 32,              //margin for bottom statusbar
+         GAP = 10,               //gap between tiled windows
+         BORDER = 6,            //window border size
+         FOCUSCOL = 0x9baeb1,   //focused client border color
+         UNFOCUSCOL = 0x12333b, //normal border color
          MARGIN = 4,
          CORNER = 256;
 
@@ -195,6 +220,7 @@ static xcb_keysym_t get_keysym(xcb_keycode_t keycode) {
 static void focus(client_t *subj, int mode) {
  const uint32_t vals[] = { mode ? UNFOCUSCOL : FOCUSCOL };
  xcb_change_window_attributes(conn, subj->id, XCB_CW_BORDER_PIXEL, vals);
+ xcb_configure_window(conn, subj->id, 0, NULL);
  if (mode == FOCUS) {
   xcb_set_input_focus(conn, XCB_INPUT_FOCUS_POINTER_ROOT, subj->id, XCB_CURRENT_TIME);
   if (subj != fwin[curws]) {
@@ -207,10 +233,12 @@ static void focus(client_t *subj, int mode) {
 static void raise(client_t *subj) {
  insert(curws, excise(curws, subj));
  xcb_configure_window(conn, subj->id, XCB_CONFIG_WINDOW_STACK_MODE, (uint32_t[]){ XCB_STACK_MODE_ABOVE });
- xcb_flush(conn);
- xcb_map_window(conn, subj->id);
- xcb_flush(conn);
- focus(subj, FOCUS);
+}
+
+static void center_pointer(client_t *subj) {
+ xcb_get_geometry_reply_t *temp = xcb_get_geometry_reply(conn, xcb_get_geometry(conn, subj->id), NULL);
+ xcb_warp_pointer(conn, XCB_NONE, subj->id, 0, 0, 0, 0, (temp->width + 2 * BORDER)/2, (temp->height + 2 * BORDER)/2);
+ free(temp);
 }
 
 static void close(int arg) {
@@ -218,49 +246,59 @@ static void close(int arg) {
  xcb_icccm_get_wm_protocols_reply_t pro;
  if (xcb_icccm_get_wm_protocols_reply(conn, xcb_icccm_get_wm_protocols_unchecked(conn, fwin[curws]->id, ewmh->WM_PROTOCOLS), &pro, NULL))
   for (int i = 0; i < pro.atoms_len; i++) {
-   xcb_client_message_event_t ev = { XCB_CLIENT_MESSAGE, 32, 0, fwin[curws]->id, wm_atoms[0] };
-   ev.data.data32[0] = wm_atoms[WM_DELETE_WINDOW];
-   ev.data.data32[1] = XCB_CURRENT_TIME;
-   xcb_send_event(conn, 0, fwin[curws]->id, XCB_EVENT_MASK_NO_EVENT, (char *)&ev);
-   goto a;
+   if (pro.atoms[i] == wm_atoms[WM_DELETE_WINDOW]) {
+    xcb_client_message_event_t ev = { XCB_CLIENT_MESSAGE, 32, 0, fwin[curws]->id, wm_atoms[0] };
+    ev.data.data32[0] = wm_atoms[WM_DELETE_WINDOW];
+    ev.data.data32[1] = XCB_CURRENT_TIME;
+    xcb_send_event(conn, 0, fwin[curws]->id, XCB_EVENT_MASK_NO_EVENT, (char *)&ev);
+    goto a;
+   }
   }
  xcb_kill_client(conn, fwin[curws]->id);
 a:
  xcb_icccm_get_wm_protocols_reply_wipe(&pro);
 }
 
+/*
+static void cycle(int arg) {
+ //is there a window to start from?
+ if (!fwin[cuws] || !fwin[curws]->next) return;
+ client_t *cur = fwin[curws];
+ while (cur->next) cur = cur->next;
+ raise(cur);
+}
+
+
+*/
+
+static void cycle_raise(client_t *cur) {
+  while (cur != fwin[curws]) {
+   client_t *temp = cur->prev;
+   raise(cur); 
+   cur = temp;
+  }
+}
+
 static void cycle(int arg) {
  if (!stack[curws] || !stack[curws]->next) return;
 
  if (!tabbing) {
-  xcb_keycode_t *keycode = xcb_key_symbols_get_keycode(keysyms, XK_Super_L);
-  xcb_grab_key(conn, 0, scr->root, XCB_MOD_MASK_ANY, *keycode, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC);
-
-  xcb_key_press_event_t *e = calloc(1, sizeof(xcb_key_press_event_t));
-  e->response_type = XCB_KEY_PRESS;
-  e->detail = *keycode;
-  e->time = XCB_CURRENT_TIME;
-  e->root = scr->root;
-  e->event = scr->root;
-  e->child = scr->root;
-  e->state = XCB_MOD_MASK_ANY;
-  e->same_screen = 1;
-  
-  xcb_send_event(conn, false, scr->root, XCB_EVENT_MASK_STRUCTURE_NOTIFY, (char*)e);
-  xcb_flush(conn);
-  free(e);
-
-  free(keycode);
-
+  printf("tabbing started\n");
   marker = fwin[curws];
-  tabbing = true; 
+  tabbing = true;
  }
- 
- if (marker->next) raise(marker->next);
- else { 
-  marker = stack[curws];
-  cycle(0);
+
+ if (marker->next) {
+  cycle_raise(marker);
+  marker = fwin[curws];
+  center_pointer(marker->next);
+  raise(marker->next);
+ } else {
+  cycle_raise(marker);
+  center_pointer(stack[curws]);
+  marker = fwin[curws];
  }
+ xcb_flush(conn);
 }
 
 static void change_ws(int arg) {
@@ -311,7 +349,6 @@ static void full_save_state(client_t *subj) {
  subj->full_geom.width = temp->width;
  subj->full_geom.height = temp->height;
  free(temp);
- //don't determine value here
 }
 
 static void snap_restore_state(client_t *subj) {
@@ -320,7 +357,6 @@ static void snap_restore_state(client_t *subj) {
 }
 
 static void full_restore_state(client_t *subj) {
- //don't determine value here
  xcb_configure_window(conn, subj->id, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, (uint32_t[]){ subj->full_geom.x, subj->full_geom.y, subj->full_geom.width, subj->full_geom.height });
 }
 
@@ -360,9 +396,10 @@ SNAP_TEMPLATE(snap_right, scr->width_in_pixels / 2 + GAP / 2, GAP + TOP, scr->wi
 SNAP_TEMPLATE(snap_uright, scr->width_in_pixels / 2 + GAP / 2, GAP + TOP, scr->width_in_pixels / 2 - 1.5 * GAP - BORDER * 2, (scr->height_in_pixels - TOP - BOT) / 2 - 1.5 * GAP - 2 * BORDER)
 SNAP_TEMPLATE(snap_dright, scr->width_in_pixels / 2 + GAP / 2, (scr->height_in_pixels - TOP - BOT) / 2 + GAP / 2 + TOP, scr->width_in_pixels / 2 - 1.5 * GAP - BORDER * 2, (scr->height_in_pixels - TOP - BOT) / 2 - 1.5 * GAP - 2 * BORDER)
 
-static void map_notify(xcb_generic_event_t *ev) {
- xcb_map_notify_event_t *e = (xcb_map_notify_event_t *)ev;
- if (e->override_redirect || wtf(e->window, NULL)) return;
+static void map_request(xcb_generic_event_t *ev) {
+ xcb_map_request_event_t *e = (xcb_map_request_event_t *)ev;
+ //if (e->override_redirect || wtf(e->window, NULL)) return;
+ if (wtf(e->window, NULL)) return;
 
  xcb_get_geometry_reply_t *init_geom = xcb_get_geometry_reply(conn, xcb_get_geometry_unchecked(conn, e->window), NULL);
  if (!init_geom) return;
@@ -371,6 +408,7 @@ static void map_notify(xcb_generic_event_t *ev) {
  if (xcb_ewmh_get_wm_window_type_reply(ewmh, xcb_ewmh_get_wm_window_type(ewmh, e->window), &type, NULL)) {
   for (unsigned int i = 0; i < type.atoms_len; i++)
    if (type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_DOCK || type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_TOOLBAR || type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_DESKTOP) {
+    xcb_map_window(conn, e->window);
     xcb_ewmh_get_atoms_reply_wipe(&type);
     return;
    }
@@ -379,7 +417,7 @@ static void map_notify(xcb_generic_event_t *ev) {
  
  uint32_t vals[] = { (scr->width_in_pixels - init_geom->width) / 2 - BORDER, (scr->height_in_pixels - TOP - BOT - init_geom->height) / 2 - BORDER, BORDER };
  xcb_configure_window(conn, e->window, XCB_CONFIG_WINDOW_BORDER_WIDTH | XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_BORDER_WIDTH, vals);
- vals[0] = XCB_EVENT_MASK_ENTER_WINDOW;
+ vals[0] = XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_KEY_RELEASE;
  xcb_change_window_attributes(conn, e->window, XCB_CW_EVENT_MASK, vals);
 
  free(init_geom);
@@ -395,7 +433,10 @@ static void map_notify(xcb_generic_event_t *ev) {
  new->i_full = false;
  insert(curws, new);
 
- focus(new, FOCUS);
+ if (!state) {
+  center_pointer(new);
+  focus(new, FOCUS);
+ } else focus(new, UNFOCUS);
 }
 
 static void enter_notify(xcb_generic_event_t *ev) {
@@ -437,11 +478,11 @@ static void button_press(xcb_generic_event_t *ev) {
 
 static void motion_notify(xcb_generic_event_t *ev) {
  xcb_motion_notify_event_t *e = (xcb_motion_notify_event_t *)ev;
+
  xcb_query_pointer_reply_t *p = xcb_query_pointer_reply(conn, xcb_query_pointer(conn, scr->root), 0);
  if (!p) return;
  
  if (state == MOVE) {
-  if (fwin[curws]->snap) snap_restore_state(fwin[curws]);
 
   if (p->root_x < MARGIN) {
    if (p->root_y < CORNER) snap_uleft(0);
@@ -458,12 +499,13 @@ static void motion_notify(xcb_generic_event_t *ev) {
   } else if (p->root_y > scr->height_in_pixels - MARGIN) {
    if (p->root_x < CORNER) snap_dleft(0);
    else if (p->root_x > scr->width_in_pixels - CORNER) snap_dright(0);
-   else goto a;
+   else goto b;
   } else {
+b:
+   if (fwin[curws]->snap) snap_restore_state(fwin[curws]);
    xcb_configure_window(conn, fwin[curws]->id, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, (uint32_t[]){ p->root_x - x, p->root_y - y });
    goto a;
   }
-  xcb_ungrab_pointer(conn, XCB_CURRENT_TIME);
  } else if (state == RESZ) {
   xcb_configure_window(conn, fwin[curws]->id, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, (uint32_t[]){ p->root_x + x, p->root_y + y });
  }
@@ -479,6 +521,14 @@ static void button_release(xcb_generic_event_t *ev) {
 static void key_press(xcb_generic_event_t *ev) {
  xcb_key_press_event_t *e = (xcb_key_press_event_t *)ev;
  xcb_keysym_t keysym = get_keysym(e->detail);
+
+ if (tabbing) {
+  if (keysym == XK_Tab) {
+   cycle(0);
+  }
+  return;
+ }
+
  for (int i = 0; i < LEN(keys); i++) {
   if (keysym == keys[i].key && keys[i].mod == e->state) {
    keys[i].function(keys[i].arg);
@@ -490,19 +540,27 @@ static void key_press(xcb_generic_event_t *ev) {
 static void key_release(xcb_generic_event_t *ev) {
  xcb_key_release_event_t *e = (xcb_key_release_event_t *)ev;
  xcb_keysym_t keysym = get_keysym(e->detail);
+
  if (keysym == XK_Super_L && tabbing) {
-  xcb_ungrab_key(conn, e->detail, scr->root, XCB_MOD_MASK_ANY);
+  printf("tabbing finisheded\n");
   tabbing = false;
  }
 }
 
 static void forget_client(client_t *subj, int ws) {
+ if (state && subj == fwin[curws]) {
+  xcb_ungrab_pointer(conn, XCB_CURRENT_TIME);
+  state = 0;
+ }
+ 
+ xcb_change_save_set(conn, XCB_SET_MODE_DELETE, subj->id);
+
  free(excise(ws, subj));
  
  if (ws == curws) {
   if (fwin[curws] == subj) {
    if (!stack[curws]) fwin[curws] = NULL;
-   else focus(stack[curws], FOCUS);
+   else center_pointer(stack[curws]);
   }
  }
 }
@@ -550,7 +608,7 @@ int main(void) {
  conn = xcb_connect(NULL, NULL);
  scr = xcb_setup_roots_iterator(xcb_get_setup(conn)).data;
 
- xcb_change_window_attributes_checked(conn, scr->root, XCB_CW_EVENT_MASK, (uint32_t[]){ XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY });
+ xcb_change_window_attributes_checked(conn, scr->root, XCB_CW_EVENT_MASK, (uint32_t[]){ XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT });
 
  ewmh = calloc(1, sizeof(xcb_ewmh_connection_t));
  xcb_ewmh_init_atoms_replies(ewmh, xcb_ewmh_init_atoms(conn, ewmh), (void *)0);
@@ -581,7 +639,7 @@ int main(void) {
  //events[XCB_CONFIGURE_NOTIFY] = configure_notify;
  events[XCB_KEY_PRESS]	       = key_press;
  events[XCB_KEY_RELEASE]	     = key_release;
- events[XCB_MAP_NOTIFY]	      = map_notify;
+ events[XCB_MAP_REQUEST]	     = map_request;
  events[XCB_UNMAP_NOTIFY]	    = unmap_notify;
  events[XCB_DESTROY_NOTIFY]	  = destroy_notify;
  events[XCB_ENTER_NOTIFY]	    = enter_notify;
