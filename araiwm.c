@@ -1,16 +1,7 @@
-//main xcb library
 #include <xcb/xcb.h>
-
-//xcb library for the EWMH standard
 #include <xcb/xcb_ewmh.h>
-
-//xcb library for the ICCCM standard
 #include <xcb/xcb_icccm.h>
-
-//xcb library for keyboard input (manages system specifc keycodes)
 #include <xcb/xcb_keysyms.h>
-
-//X11 library that holds all keysyms (defines system unspecific keysyms)
 #include <X11/keysym.h>
 
 #include <stdlib.h>
@@ -18,53 +9,34 @@
 #include <string.h>
 #include <stdio.h>
 
-/*
-the top left corner includes the border, but the width/height dont!!
-*/
-
-//size of array macro
 #define LEN(A) sizeof(A)/sizeof(*A)
 
-//the number of workspaces
 #define NUM_WS 4
 
-/* window manager state masks
-if the window manager state is 0, then we are not moving or resizing a window */
 #define MOVE 1
 #define RESZ 2
 
-/* focus or unfocus specifications
-passed to the function that focuses a client to determine whether we are giving focus to or removing focus from a client */
 #define FOCUS 0
 #define UNFOCUS 1
 
-//modifiers for keyboard and mouse input
 #define MOD XCB_MOD_MASK_4
 #define SHIFT XCB_MOD_MASK_SHIFT
 
-/* assigns indices to atom names
-useful because we store the first atoms in a reference array, using the the final one as the array's size */
 enum { WM_PROTOCOLS, WM_DELETE_WINDOW, WM_COUNT };
 enum { NET_SUPPORTED, NET_FULLSCREEN, NET_WM_STATE, NET_COUNT };
 
-//structure that represents a client we manage
 typedef struct client_t {
  xcb_window_t id;
  struct client_t *next,
                  *prev;
-
- // structures that indicate the position and size of the window before it was tiled or maximized
  xcb_rectangle_t snap_geom,
                  full_geom;
- 
- //booleans that track the window state
  bool ignore_unmap,
       snap,
       e_full,
       i_full;
 } client_t;
 
-//structure that associates a keybind with a function
 typedef struct {
  uint16_t mod;
  xcb_keysym_t key;
@@ -72,14 +44,12 @@ typedef struct {
  int arg;
 } keybind_t;
 
-//xcb boilerplate
 static xcb_connection_t *conn;
 static xcb_ewmh_connection_t *ewmh;
 static xcb_screen_t *scr;
 static xcb_atom_t wm_atoms[WM_COUNT], net_atoms[NET_COUNT];
-static xcb_key_symbols_t *keysyms;
+static xcb_key_symbols_t *keysyms = NULL;
 
-//window organization
 static client_t *stack[NUM_WS] = { NULL },
                 *fwin[NUM_WS] = { NULL };
 
@@ -89,18 +59,15 @@ static int curws = 0,
            x,
            y;
 
-//alt-tabbing data
 bool tabbing = false;
-client_t *marker = NULL,
-         *cursed = NULL;
+client_t *marker = NULL;
 
-//config values
 uint32_t TOP = 0,               //margin for top statusbar
          BOT = 32,              //margin for bottom statusbar
-         GAP = 10,               //gap between tiled windows
+         GAP = 10,              //gap between tiled windows
          BORDER = 6,            //window border size
-         FOCUSCOL = 0x9baeb1,   //focused client border color
-         UNFOCUSCOL = 0x12333b, //normal border color
+         FOCUSCOL = 0x81a1c1,   //focused client border color
+         UNFOCUSCOL = 0x3b4252, //normal border color
          MARGIN = 4,
          CORNER = 256;
 
@@ -189,6 +156,14 @@ static void w_map(client_t *subj) {
  xcb_map_window(conn, subj->id);
 }
 
+static void w_event_release(client_t *subj) {
+ xcb_change_window_attributes(conn, subj->id, XCB_CW_EVENT_MASK, (uint32_t[]){ XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_KEY_RELEASE }); 
+}
+
+static void w_event_normal(client_t *subj) {
+ xcb_change_window_attributes(conn, subj->id, XCB_CW_EVENT_MASK, (uint32_t[]){ XCB_EVENT_MASK_ENTER_WINDOW }); 
+}
+
 static void traverse(client_t *list, void (*func)(client_t *)) {
  for (; list;) {
   func(list);
@@ -211,9 +186,7 @@ static void get_atoms(const char **names, xcb_atom_t *atoms, unsigned int count)
 }
 
 static xcb_keysym_t get_keysym(xcb_keycode_t keycode) {
- xcb_key_symbols_t *keysyms = xcb_key_symbols_alloc(conn);
  xcb_keysym_t keysym = xcb_key_symbols_get_keysym(keysyms, keycode, 0);
- xcb_key_symbols_free(keysyms);
  return keysym;
 }
 
@@ -259,18 +232,6 @@ a:
  xcb_icccm_get_wm_protocols_reply_wipe(&pro);
 }
 
-/*
-static void cycle(int arg) {
- //is there a window to start from?
- if (!fwin[cuws] || !fwin[curws]->next) return;
- client_t *cur = fwin[curws];
- while (cur->next) cur = cur->next;
- raise(cur);
-}
-
-
-*/
-
 static void cycle_raise(client_t *cur) {
   while (cur != fwin[curws]) {
    client_t *temp = cur->prev;
@@ -279,11 +240,16 @@ static void cycle_raise(client_t *cur) {
   }
 }
 
+static void stop_cycle() {
+  tabbing = false;
+  traverse(stack[curws], w_event_normal); 
+}
+
 static void cycle(int arg) {
  if (!stack[curws] || !stack[curws]->next) return;
 
  if (!tabbing) {
-  printf("tabbing started\n");
+  traverse(stack[curws], w_event_release);
   marker = fwin[curws];
   tabbing = true;
  }
@@ -314,6 +280,7 @@ static void change_ws(int arg) {
 
 static void send_ws(int arg) {
  if (!fwin[curws] || arg == curws) return;
+ if (fwin[curws] != stack[curws]) xcb_configure_window(conn, fwin[curws]->id, XCB_CONFIG_WINDOW_STACK_MODE, (uint32_t[]){ XCB_STACK_MODE_ABOVE });
  fwin[curws]->ignore_unmap = true;
  insert(arg, excise(curws, fwin[curws]));
  xcb_unmap_window(conn, fwin[curws]->id);
@@ -398,7 +365,6 @@ SNAP_TEMPLATE(snap_dright, scr->width_in_pixels / 2 + GAP / 2, (scr->height_in_p
 
 static void map_request(xcb_generic_event_t *ev) {
  xcb_map_request_event_t *e = (xcb_map_request_event_t *)ev;
- //if (e->override_redirect || wtf(e->window, NULL)) return;
  if (wtf(e->window, NULL)) return;
 
  xcb_get_geometry_reply_t *init_geom = xcb_get_geometry_reply(conn, xcb_get_geometry_unchecked(conn, e->window), NULL);
@@ -417,7 +383,7 @@ static void map_request(xcb_generic_event_t *ev) {
  
  uint32_t vals[] = { (scr->width_in_pixels - init_geom->width) / 2 - BORDER, (scr->height_in_pixels - TOP - BOT - init_geom->height) / 2 - BORDER, BORDER };
  xcb_configure_window(conn, e->window, XCB_CONFIG_WINDOW_BORDER_WIDTH | XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_BORDER_WIDTH, vals);
- vals[0] = XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_KEY_RELEASE;
+ vals[0] = XCB_EVENT_MASK_ENTER_WINDOW;
  xcb_change_window_attributes(conn, e->window, XCB_CW_EVENT_MASK, vals);
 
  free(init_geom);
@@ -522,11 +488,8 @@ static void key_press(xcb_generic_event_t *ev) {
  xcb_key_press_event_t *e = (xcb_key_press_event_t *)ev;
  xcb_keysym_t keysym = get_keysym(e->detail);
 
- if (tabbing) {
-  if (keysym == XK_Tab) {
-   cycle(0);
-  }
-  return;
+ if (keysym != XK_Tab && tabbing) {
+  stop_cycle();
  }
 
  for (int i = 0; i < LEN(keys); i++) {
@@ -541,10 +504,7 @@ static void key_release(xcb_generic_event_t *ev) {
  xcb_key_release_event_t *e = (xcb_key_release_event_t *)ev;
  xcb_keysym_t keysym = get_keysym(e->detail);
 
- if (keysym == XK_Super_L && tabbing) {
-  printf("tabbing finisheded\n");
-  tabbing = false;
- }
+ if (keysym == XK_Super_L && tabbing) stop_cycle();
 }
 
 static void forget_client(client_t *subj, int ws) {
@@ -604,11 +564,29 @@ static void client_message(xcb_generic_event_t *ev) {
  }
 }
 
+static void grab_keys() {
+ if (keysyms) free(keysyms);
+ keysyms = xcb_key_symbols_alloc(conn);
+ xcb_keycode_t *keycode;
+ for (int i = 0; i < LEN(keys); i++) {
+  keycode = xcb_key_symbols_get_keycode(keysyms, keys[i].key);
+  xcb_grab_key(conn, 0, scr->root, keys[i].mod, *keycode, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC);
+  free(keycode);
+ }
+}
+
+static void mapping_notify(xcb_generic_event_t *ev) {
+ xcb_mapping_notify_event_t *e = (xcb_mapping_notify_event_t *)ev;
+ if (e->request == XCB_MAPPING_MODIFIER || e->request == XCB_MAPPING_KEYBOARD) return;
+ xcb_ungrab_key(conn, XCB_GRAB_ANY, scr->root, XCB_MOD_MASK_ANY);
+ grab_keys();
+ }
+
 int main(void) {
  conn = xcb_connect(NULL, NULL);
  scr = xcb_setup_roots_iterator(xcb_get_setup(conn)).data;
 
- xcb_change_window_attributes_checked(conn, scr->root, XCB_CW_EVENT_MASK, (uint32_t[]){ XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT });
+ xcb_change_window_attributes(conn, scr->root, XCB_CW_EVENT_MASK, (uint32_t[]){ XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT });
 
  ewmh = calloc(1, sizeof(xcb_ewmh_connection_t));
  xcb_ewmh_init_atoms_replies(ewmh, xcb_ewmh_init_atoms(conn, ewmh), (void *)0);
@@ -619,13 +597,7 @@ int main(void) {
  get_atoms(NET_ATOM_NAME, net_atoms, NET_COUNT);
  xcb_change_property(conn, XCB_PROP_MODE_REPLACE, scr->root, net_atoms[NET_SUPPORTED], XCB_ATOM_ATOM, 32, NET_COUNT, net_atoms);
  
- keysyms = xcb_key_symbols_alloc(conn);
- xcb_keycode_t *keycode;
- for (int i = 0; i < LEN(keys); i++) {
-  keycode = xcb_key_symbols_get_keycode(keysyms, keys[i].key);
-  xcb_grab_key(conn, 0, scr->root, keys[i].mod, *keycode, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC);
-  free(keycode);
- }
+ grab_keys();
 
  xcb_grab_button(conn, 0, scr->root, XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, scr->root, XCB_NONE, XCB_BUTTON_INDEX_1, XCB_MOD_MASK_4);
  xcb_grab_button(conn, 0, scr->root, XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, scr->root, XCB_NONE, XCB_BUTTON_INDEX_3, XCB_MOD_MASK_4);
@@ -643,6 +615,7 @@ int main(void) {
  events[XCB_UNMAP_NOTIFY]	    = unmap_notify;
  events[XCB_DESTROY_NOTIFY]	  = destroy_notify;
  events[XCB_ENTER_NOTIFY]	    = enter_notify;
+ events[XCB_MAPPING_NOTIFY]	  = mapping_notify;
  
  atexit(die);
 
