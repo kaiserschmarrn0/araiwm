@@ -13,9 +13,6 @@
 
 #define NUM_WS 4
 
-#define MOVE 1
-#define RESZ 2
-
 #define FOCUS 0
 #define UNFOCUS 1
 
@@ -27,14 +24,9 @@ enum { NET_SUPPORTED, NET_FULLSCREEN, NET_WM_STATE, NET_COUNT };
 
 typedef struct client_t {
  xcb_window_t id;
- struct client_t *next,
-                 *prev;
- xcb_rectangle_t snap_geom,
-                 full_geom;
- bool ignore_unmap,
-      snap,
-      e_full,
-      i_full;
+ struct client_t *next, *prev;
+ xcb_rectangle_t snap_geom, full_geom;
+ bool ignore_unmap, snap, e_full, i_full;
 } client_t;
 
 typedef struct {
@@ -53,23 +45,24 @@ static xcb_key_symbols_t *keysyms = NULL;
 static client_t *stack[NUM_WS] = { NULL },
                 *fwin[NUM_WS] = { NULL };
 
-//wm state
+static bool moving = false,
+            resizing = false,
+            tabbing = false;
+
+static client_t *marker = NULL;
+
 static int curws = 0,
-           state = 0,
-           x,
-           y;
+           x = 0,
+           y = 0;
 
-bool tabbing = false;
-client_t *marker = NULL;
-
-uint32_t TOP = 0,               //margin for top statusbar
-         BOT = 32,              //margin for bottom statusbar
-         GAP = 10,              //gap between tiled windows
-         BORDER = 6,            //window border size
-         FOCUSCOL = 0x81a1c1,   //focused client border color
-         UNFOCUSCOL = 0x3b4252, //normal border color
-         MARGIN = 4,
-         CORNER = 256;
+static uint32_t TOP = 0,
+                BOT = 32,
+                GAP = 10,
+                BORDER = 6,
+                FOCUSCOL = 0x81a1c1,
+                UNFOCUSCOL = 0x3b4252,
+                MARGIN = 4,
+                CORNER = 256;
 
 static void close(int arg);
 static void cycle(int arg);
@@ -97,29 +90,19 @@ static const keybind_t keys[] = {
  { MOD | SHIFT, XK_4, send_ws, 3 },
 };
 
-static void insert(int ws, client_t *subject) {
- subject->next = stack[ws];
- subject->prev = NULL;
- if (stack[ws]) stack[ws]->prev = subject;
- stack[ws] = subject;
+static void insert(int ws, client_t *subj) {
+ subj->next = stack[ws];
+ subj->prev = NULL;
+ if (stack[ws]) stack[ws]->prev = subj;
+ stack[ws] = subj;
 }
 
-static client_t *excise(int ws, client_t *subject) {
- if (subject->next) subject->next->prev = subject->prev;
- if (subject->prev) subject->prev->next = subject->next;
- else stack[ws] = subject->next;
- return subject;
+static client_t *excise(int ws, client_t *subj) {
+ if (subj->next) subj->next->prev = subj->prev;
+ if (subj->prev) subj->prev->next = subj->next;
+ else stack[ws] = subj->next;
+ return subj;
 }
-
-/*static void structure() {
- client_t *temp = stack[curws];
- printf("window stack: [ ");
- while (temp) {
-  printf("%d, ", temp->id);
-  temp = temp->next;
- }
- printf("]\n");
-}*/
 
 static client_t *wtf(xcb_window_t id, int *ws) {
  client_t *cur = stack[curws];
@@ -389,7 +372,6 @@ static void map_request(xcb_generic_event_t *ev) {
  free(init_geom);
 
  xcb_map_window(conn, e->window);
- xcb_change_save_set(conn, XCB_SET_MODE_INSERT, e->window);
 
  client_t *new = malloc(sizeof(client_t));
  new->id = e->window;
@@ -399,10 +381,11 @@ static void map_request(xcb_generic_event_t *ev) {
  new->i_full = false;
  insert(curws, new);
 
- if (!state) {
+ if (moving || resizing || tabbing) focus(new, UNFOCUS);
+ else {
   center_pointer(new);
   focus(new, FOCUS);
- } else focus(new, UNFOCUS);
+ }
 }
 
 static void enter_notify(xcb_generic_event_t *ev) {
@@ -430,12 +413,12 @@ static void button_press(xcb_generic_event_t *ev) {
    x = e->event_x - geom->x;
    y = e->event_y - geom->y;
   }
-  state = MOVE; 
+  moving = true; 
  } else {
-  state = RESZ;
   fwin[curws]->snap = false;
   x = geom->width - e->event_x;
   y = geom->height - e->event_y;
+  resizing = true;
  }
 
  free(geom);
@@ -448,7 +431,7 @@ static void motion_notify(xcb_generic_event_t *ev) {
  xcb_query_pointer_reply_t *p = xcb_query_pointer_reply(conn, xcb_query_pointer(conn, scr->root), 0);
  if (!p) return;
  
- if (state == MOVE) {
+ if (moving) {
 
   if (p->root_x < MARGIN) {
    if (p->root_y < CORNER) snap_uleft(0);
@@ -472,7 +455,7 @@ b:
    xcb_configure_window(conn, fwin[curws]->id, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, (uint32_t[]){ p->root_x - x, p->root_y - y });
    goto a;
   }
- } else if (state == RESZ) {
+ } else if (resizing) {
   xcb_configure_window(conn, fwin[curws]->id, XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, (uint32_t[]){ p->root_x + x, p->root_y + y });
  }
 a:
@@ -481,7 +464,7 @@ a:
 
 static void button_release(xcb_generic_event_t *ev) {
  xcb_ungrab_pointer(conn, XCB_CURRENT_TIME);
- state = 0;
+ resizing = moving = false;
 }
 
 static void key_press(xcb_generic_event_t *ev) {
@@ -508,9 +491,9 @@ static void key_release(xcb_generic_event_t *ev) {
 }
 
 static void forget_client(client_t *subj, int ws) {
- if (state && subj == fwin[curws]) {
+ if ((moving || resizing) && subj == fwin[curws]) {
   xcb_ungrab_pointer(conn, XCB_CURRENT_TIME);
-  state = 0;
+  moving = resizing = false;
  }
  
  xcb_change_save_set(conn, XCB_SET_MODE_DELETE, subj->id);
@@ -580,7 +563,36 @@ static void mapping_notify(xcb_generic_event_t *ev) {
  if (e->request == XCB_MAPPING_MODIFIER || e->request == XCB_MAPPING_KEYBOARD) return;
  xcb_ungrab_key(conn, XCB_GRAB_ANY, scr->root, XCB_MOD_MASK_ANY);
  grab_keys();
+}
+
+static int mask_to_geo(xcb_configure_request_event_t *e, uint32_t *vals) {
+ int i = 0;
+ if (e->value_mask & XCB_CONFIG_WINDOW_X) vals[i++] = e->x;
+ if (e->value_mask & XCB_CONFIG_WINDOW_Y) vals[i++] = e->y;
+ if (e->value_mask & XCB_CONFIG_WINDOW_WIDTH) vals[i++] = e->width;
+ if (e->value_mask & XCB_CONFIG_WINDOW_HEIGHT) vals[i++] = e->height;
+ return i;
+}
+
+static void configure_request(xcb_generic_event_t *ev) {
+ xcb_configure_request_event_t *e = (xcb_configure_request_event_t *)ev;
+ client_t *found = wtf(e->window, NULL);
+ 
+ uint32_t vals[6];
+
+ if (!found) {
+  int i = mask_to_geo(e, vals);
+  if (e->value_mask & XCB_CONFIG_WINDOW_SIBLING) vals[i++] = e->sibling;
+  if (e->value_mask & XCB_CONFIG_WINDOW_STACK_MODE) vals[i] = e->stack_mode;
+  xcb_configure_window(conn, e->window, e->value_mask, vals);
+  return;
  }
+
+ if (!found->i_full && !found->e_full) {
+  mask_to_geo(e, vals);
+  xcb_configure_window(conn, found->id, e->value_mask & ~(XCB_CONFIG_WINDOW_STACK_MODE | XCB_CONFIG_WINDOW_SIBLING), vals);
+ }
+}
 
 int main(void) {
  conn = xcb_connect(NULL, NULL);
@@ -591,7 +603,7 @@ int main(void) {
  ewmh = calloc(1, sizeof(xcb_ewmh_connection_t));
  xcb_ewmh_init_atoms_replies(ewmh, xcb_ewmh_init_atoms(conn, ewmh), (void *)0);
 
- const char *WM_ATOM_NAME[] = { "WM_PROTOCOLS", "WM_DELETE_WINDOW", };
+ const char *WM_ATOM_NAME[] = { "WM_PROTOCOLS", "WM_DELETE_WINDOW" };
  get_atoms(WM_ATOM_NAME, wm_atoms, WM_COUNT);
  const char *NET_ATOM_NAME[] = { "_NET_SUPPORTED", "_NET_WM_STATE_FULLSCREEN", "_NET_WM_STATE" };
  get_atoms(NET_ATOM_NAME, net_atoms, NET_COUNT);
@@ -604,18 +616,18 @@ int main(void) {
  
  static void (*events[XCB_NO_OPERATION])(xcb_generic_event_t *event);
  for (int i = 0; i < XCB_NO_OPERATION; i++) events[i] = NULL;
- events[XCB_BUTTON_PRESS]	    = button_press;
- events[XCB_BUTTON_RELEASE]	  = button_release;
- events[XCB_MOTION_NOTIFY]	   = motion_notify;
- events[XCB_CLIENT_MESSAGE]	  = client_message;
- //events[XCB_CONFIGURE_NOTIFY] = configure_notify;
- events[XCB_KEY_PRESS]	       = key_press;
- events[XCB_KEY_RELEASE]	     = key_release;
- events[XCB_MAP_REQUEST]	     = map_request;
- events[XCB_UNMAP_NOTIFY]	    = unmap_notify;
- events[XCB_DESTROY_NOTIFY]	  = destroy_notify;
- events[XCB_ENTER_NOTIFY]	    = enter_notify;
- events[XCB_MAPPING_NOTIFY]	  = mapping_notify;
+ events[XCB_BUTTON_PRESS]	     = button_press;
+ events[XCB_BUTTON_RELEASE]	   = button_release;
+ events[XCB_MOTION_NOTIFY]	    = motion_notify;
+ events[XCB_CLIENT_MESSAGE]	   = client_message;
+ events[XCB_CONFIGURE_REQUEST] = configure_request;
+ events[XCB_KEY_PRESS]	        = key_press;
+ events[XCB_KEY_RELEASE]	      = key_release;
+ events[XCB_MAP_REQUEST]	      = map_request;
+ events[XCB_UNMAP_NOTIFY]	     = unmap_notify;
+ events[XCB_DESTROY_NOTIFY]	   = destroy_notify;
+ events[XCB_ENTER_NOTIFY]	     = enter_notify;
+ events[XCB_MAPPING_NOTIFY]	   = mapping_notify;
  
  atexit(die);
 
