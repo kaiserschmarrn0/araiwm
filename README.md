@@ -2,7 +2,9 @@
 
 araiwm - arai window manager
 ----------------------------
-manages windows no da
+araiwm is a truly minimal, genuinely useful window manager for X no da
+
+be careful, we ignore many standards (but only because they're awful standards)
 
 Requirements
 ------------
