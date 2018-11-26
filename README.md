@@ -10,6 +10,9 @@ Requirements
 ------------
 XCB header files
 
+	Debian, Ubuntu: libxcb1-dev libxcb-ewmh-dev libxcb-icccm4-dev libxcb-keysyms1-dev
+ Void: libxcb-devel xcb-util-devel xcb-util-keysyms-devel xcb-util-wm-devel
+
 Configuration
 -------------
 araiwm is configured by editing araiwm.c and compiling.
