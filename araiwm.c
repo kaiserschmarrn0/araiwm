@@ -13,9 +13,6 @@
 
 #define NUM_WS 4
 
-#define FOCUS 0
-#define UNFOCUS 1
-
 #define MOD XCB_MOD_MASK_4
 #define SHIFT XCB_MOD_MASK_SHIFT
 
@@ -55,14 +52,14 @@ static int curws = 0,
            x = 0,
            y = 0;
 
-static uint32_t TOP = 0,
-                BOT = 32,
-                GAP = 10,
-                BORDER = 6,
-                FOCUSCOL = 0x81a1c1,
-                UNFOCUSCOL = 0x3b4252,
-                MARGIN = 4,
-                CORNER = 256;
+static const uint32_t TOP = 0,
+                      BOT = 32,
+                      GAP = 10,
+                      BORDER = 6,
+                      FOCUSCOL = 0x81a1c1,
+                      UNFOCUSCOL = 0x3b4252,
+                      MARGIN = 4,
+                      CORNER = 256;
 
 static void close(int arg);
 static void cycle(int arg);
@@ -179,7 +176,7 @@ static void grab_keys() {
 	}
 }
 
-static void focus(client_t *subj, int mode) {
+/*static void focus(client_t *subj, int mode) {
 	const uint32_t vals[] = { mode ? UNFOCUSCOL : FOCUSCOL };
 	xcb_change_window_attributes(conn, subj->id, XCB_CW_BORDER_PIXEL, vals);
 	xcb_configure_window(conn, subj->id, 0, NULL);
@@ -190,6 +187,13 @@ static void focus(client_t *subj, int mode) {
 			fwin[curws] = subj;
 		}
 	}
+}*/
+
+static void focus(client_t *subj) {
+	if (fwin[curws]) xcb_change_window_attributes(conn, fwin[curws]->id, XCB_CW_BORDER_PIXEL, (uint32_t[]){ UNFOCUSCOL});	
+	xcb_change_window_attributes(conn, subj->id, XCB_CW_BORDER_PIXEL, (uint32_t[]){ FOCUSCOL });
+	xcb_set_input_focus(conn, XCB_INPUT_FOCUS_POINTER_ROOT, subj->id, XCB_CURRENT_TIME);
+	fwin[curws] = subj;
 }
 
 static void raise(client_t *subj) {
@@ -275,7 +279,7 @@ static void change_ws(int arg) {
 	traverse(stack[arg], w_map);
 	traverse(stack[curws], w_unmap_ignore); 
 	curws = arg;
-	if (fwin[arg]) focus(fwin[curws], FOCUS); 
+	if (fwin[arg]) focus(fwin[curws]); 
 	
 	xcb_ewmh_set_current_desktop(ewmh, 0, arg);
 }
@@ -367,18 +371,17 @@ static void map_request(xcb_generic_event_t *ev) {
 			if (type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_DOCK || type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_TOOLBAR || type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_DESKTOP) {
 			xcb_ewmh_get_atoms_reply_wipe(&type);
 			return;
-			}
+		}
 		xcb_ewmh_get_atoms_reply_wipe(&type);
 	}
+
+	xcb_query_pointer_reply_t *ptr = xcb_query_pointer_reply(conn, xcb_query_pointer(conn, scr->root), NULL);
 	
-	xcb_query_pointer_reply_t *ptr = xcb_query_pointer_reply(conn, xcb_query_pointer_unchecked(conn, scr->root), NULL);
+	xcb_change_window_attributes(conn, e->window, XCB_CW_BORDER_PIXEL | XCB_CW_EVENT_MASK, (uint32_t[]){ UNFOCUSCOL, XCB_EVENT_MASK_ENTER_WINDOW });
+	xcb_configure_window(conn, e->window, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_BORDER_WIDTH, (uint32_t[]){ ptr->root_x - init_geom->width / 2, ptr->root_y - init_geom->height / 2, BORDER });
 
-	uint32_t vals[] = { BORDER };
-	xcb_configure_window(conn, e->window, XCB_CONFIG_WINDOW_BORDER_WIDTH, vals);
-	vals[0] = XCB_EVENT_MASK_ENTER_WINDOW;
-	xcb_change_window_attributes(conn, e->window, XCB_CW_EVENT_MASK, vals);
-
-	xcb_flush(conn);
+	free(ptr);
+	free(init_geom);
 
 	client_t *new = malloc(sizeof(client_t));
 	new->id = e->window;
@@ -387,24 +390,18 @@ static void map_request(xcb_generic_event_t *ev) {
 	new->e_full = false;
 	new->i_full = false;
 	insert(curws, new);
-
-	if (moving || resizing || tabbing) focus(new, UNFOCUS);
-	else {
-		xcb_get_geometry_reply_t *cur_geom = xcb_get_geometry_reply(conn, xcb_get_geometry_unchecked(conn, e->window), NULL); 
-		focus(new, FOCUS);
-		if (!((ptr->root_x >= cur_geom->x && ptr->root_x <= cur_geom->x + cur_geom->width) || (ptr->root_y >= cur_geom->y && ptr->root_y <= cur_geom->y + cur_geom->height))) center_pointer(new);
-		free(cur_geom);
-	}
 	
-	free(init_geom);
-	free(ptr);
+	if (!tabbing && !moving && !resizing) {
+		focus(new);
+		center_pointer(new);
+	}
 }
 
 static void enter_notify(xcb_generic_event_t *ev) {
 	xcb_enter_notify_event_t *e = (xcb_enter_notify_event_t *)ev;
 	client_t *found = wtf(e->event, NULL);
 	if (!found || found == fwin[curws]) return;
-	focus(found, FOCUS);
+	focus(found);
 }
 
 static void button_press(xcb_generic_event_t *ev) {
@@ -412,7 +409,7 @@ static void button_press(xcb_generic_event_t *ev) {
 	client_t *found = wtf(e->child, NULL);
 	if (!found) return;
 	
-	if (found != fwin[curws]) focus(found, FOCUS);
+	if (found != fwin[curws]) focus(found);
 	if (found != stack[curws]) raise(found);
 	if (found->e_full || found->i_full) return;
 
@@ -508,7 +505,8 @@ static void forget_client(client_t *subj, int ws) {
 	if (ws == curws) {
 		if (fwin[curws] == subj) {
 			if (!stack[curws]) fwin[curws] = NULL;
-			else {
+			else focus(stack[curws]);
+			/*else {
 				xcb_query_pointer_reply_t *ptr = xcb_query_pointer_reply(conn, xcb_query_pointer_unchecked(conn, scr->root), NULL);
 				if (ptr->child != scr->root) {
 					client_t *found = wtf(ptr->child, NULL);
@@ -516,7 +514,7 @@ static void forget_client(client_t *subj, int ws) {
 					else focus(found, FOCUS);
 				} else center_pointer(stack[curws]);
 				free(ptr);
-			}
+			}*/
 		}
 	}
 }
