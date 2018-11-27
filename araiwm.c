@@ -307,6 +307,7 @@ static void snap_restore_state(client_t *subj) {
  if (!fwin[curws] || fwin[curws]->e_full || fwin[curws]->i_full) return; \
  if (!fwin[curws]->snap) snap_save_state(fwin[curws]); \
  xcb_configure_window(conn, fwin[curws]->id, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, (uint32_t[]){ B, C, D, E}); \
+ if (!moving) center_pointer(fwin[curws]); \
 }
 
 SNAP_TEMPLATE(snap_max, GAP, GAP + TOP, scr->width_in_pixels - 2 * GAP - 2 * BORDER, scr->height_in_pixels - 2 * GAP - 2 * BORDER - TOP - BOT)
@@ -355,29 +356,29 @@ static void ext_fullscreen(client_t *subj) {
 static void map_request(xcb_generic_event_t *ev) {
  xcb_map_request_event_t *e = (xcb_map_request_event_t *)ev;
  if (wtf(e->window, NULL)) return;
-
+ 
+ xcb_map_window(conn, e->window);
+   
  xcb_get_geometry_reply_t *init_geom = xcb_get_geometry_reply(conn, xcb_get_geometry_unchecked(conn, e->window), NULL);
- if (!init_geom) return;
 
  xcb_ewmh_get_atoms_reply_t type;
  if (xcb_ewmh_get_wm_window_type_reply(ewmh, xcb_ewmh_get_wm_window_type(ewmh, e->window), &type, NULL)) {
   for (unsigned int i = 0; i < type.atoms_len; i++)
    if (type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_DOCK || type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_TOOLBAR || type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_DESKTOP) {
-    xcb_map_window(conn, e->window);
     xcb_ewmh_get_atoms_reply_wipe(&type);
     return;
    }
   xcb_ewmh_get_atoms_reply_wipe(&type);
  }
  
- uint32_t vals[] = { (scr->width_in_pixels - init_geom->width) / 2 - BORDER, (scr->height_in_pixels - TOP - BOT - init_geom->height) / 2 - BORDER, BORDER };
- xcb_configure_window(conn, e->window, XCB_CONFIG_WINDOW_BORDER_WIDTH | XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_BORDER_WIDTH, vals);
+ xcb_query_pointer_reply_t *ptr = xcb_query_pointer_reply(conn, xcb_query_pointer_unchecked(conn, scr->root), NULL);
+
+ uint32_t vals[] = { BORDER };
+ xcb_configure_window(conn, e->window, XCB_CONFIG_WINDOW_BORDER_WIDTH, vals);
  vals[0] = XCB_EVENT_MASK_ENTER_WINDOW;
  xcb_change_window_attributes(conn, e->window, XCB_CW_EVENT_MASK, vals);
 
- free(init_geom);
-
- xcb_map_window(conn, e->window);
+ xcb_flush(conn);
 
  client_t *new = malloc(sizeof(client_t));
  new->id = e->window;
@@ -389,9 +390,14 @@ static void map_request(xcb_generic_event_t *ev) {
 
  if (moving || resizing || tabbing) focus(new, UNFOCUS);
  else {
-  center_pointer(new);
+  xcb_get_geometry_reply_t *cur_geom = xcb_get_geometry_reply(conn, xcb_get_geometry_unchecked(conn, e->window), NULL); 
   focus(new, FOCUS);
+  if (!((ptr->root_x >= cur_geom->x && ptr->root_x <= cur_geom->x + cur_geom->width) || (ptr->root_y >= cur_geom->y && ptr->root_y <= cur_geom->y + cur_geom->height))) center_pointer(new);
+  free(cur_geom);
  }
+ 
+ free(init_geom);
+ free(ptr);
 }
 
 static void enter_notify(xcb_generic_event_t *ev) {
@@ -504,7 +510,15 @@ static void forget_client(client_t *subj, int ws) {
  if (ws == curws) {
   if (fwin[curws] == subj) {
    if (!stack[curws]) fwin[curws] = NULL;
-   else center_pointer(stack[curws]);
+   else {
+    xcb_query_pointer_reply_t *ptr = xcb_query_pointer_reply(conn, xcb_query_pointer_unchecked(conn, scr->root), NULL);
+    if (ptr->child != scr->root) {
+     client_t *found = wtf(ptr->child, NULL);
+     if (!found) center_pointer(stack[curws]);
+     else focus(found, FOCUS);
+    } else center_pointer(stack[curws]);
+    free(ptr);
+   }
   }
  }
 }
