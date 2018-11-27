@@ -11,7 +11,12 @@
 
 #define LEN(A) sizeof(A)/sizeof(*A)
 
+#define LOG(A) printf("hotman: " A ".\n");
+
 #define NUM_WS 4
+
+#define ATTR 0
+#define KEYS 1
 
 #define MOD XCB_MOD_MASK_4
 #define SHIFT XCB_MOD_MASK_SHIFT
@@ -86,6 +91,8 @@ static const keybind_t keys[] = {
 	{ MOD | SHIFT, XK_3,     send_ws,        2 },
 	{ MOD | SHIFT, XK_4,     send_ws,        3 },
 };
+
+//static keybind_t *keybinds;
 
 static void insert(int ws, client_t *subj) {
 	subj->next = stack[ws];
@@ -589,6 +596,44 @@ static void configure_request(xcb_generic_event_t *ev) {
 		xcb_configure_window(conn, found->id, e->value_mask & ~(XCB_CONFIG_WINDOW_STACK_MODE | XCB_CONFIG_WINDOW_SIBLING), vals);
 	}
 }
+
+/*int nscmp(char *one, char *two) {
+	for (int i = 0; *one && *two; i++)
+		if (*one == ' ') one++;
+		else if (*one == ' ') two++;
+		else if (*one++ != *two++) return 0;
+	return 1;
+}
+
+char kgetc(FILE *subj) {
+	char found = fgetc(subj);
+	while (found == ' ') found = fgetc(subj);
+	return found;
+}
+
+static void read_config(char *path) {
+	FILE *config;
+	if (!(config = fopen(path, "r"))) {
+		LOG("can't open config");
+		return;	
+	}
+	
+	int mode = ATTR;
+	char scan[STR_MAX] = { '\0' },
+						c,
+						p;
+
+	c = kegetc(config);
+	for (keys_len = 0; c != EOF;) {
+
+			
+
+	}
+
+	fclose(config);
+
+	grab_keys();
+}*/
 
 int main(void) {
 	conn = xcb_connect(NULL, NULL);
