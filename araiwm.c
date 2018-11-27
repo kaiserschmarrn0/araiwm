@@ -56,13 +56,13 @@ static int curws = 0,
            y = 0;
 
 static uint32_t TOP = 0,
-								BOT = 32,
-								GAP = 10,
-								BORDER = 6,
-								FOCUSCOL = 0x81a1c1,
-								UNFOCUSCOL = 0x3b4252,
-								MARGIN = 4,
-								CORNER = 256;
+                BOT = 32,
+                GAP = 10,
+                BORDER = 6,
+                FOCUSCOL = 0x81a1c1,
+                UNFOCUSCOL = 0x3b4252,
+                MARGIN = 4,
+                CORNER = 256;
 
 static void close(int arg);
 static void cycle(int arg);
@@ -82,7 +82,7 @@ static const keybind_t keys[] = {
 	{ MOD | SHIFT, XK_f,     int_fullscreen, 0 },
 	{ MOD,         XK_1,     change_ws,      0 },
 	{ MOD,         XK_2,     change_ws,      1 },
-	{ MOD,         XK_3,		 change_ws,      2 },
+	{ MOD,         XK_3,     change_ws,      2 },
 	{ MOD,         XK_4,     change_ws,      3 },
 	{ MOD | SHIFT, XK_1,     send_ws,        0 },
 	{ MOD | SHIFT, XK_2,     send_ws,        1 },
