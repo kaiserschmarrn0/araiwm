@@ -15,9 +15,7 @@ XCB header files
 
 Configuration
 -------------
-araiwm is configured by editing araiwm.c and compiling.
-
-previous versions had a config file, but it's being rewritten now.
+araiwm is configured by editing a config file. The path to this config file is passed to araiwm as its only cli argument. An example araiwm.conf is provided.
 
 Installation
 ------------
