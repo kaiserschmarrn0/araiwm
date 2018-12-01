@@ -61,11 +61,6 @@ typedef struct {
 	uint32_t val;
 } attr_map_t;
 
-static keybind_t *keys = NULL;
-static int keys_len,
-           keys_max;
-static char *path;
-
 static xcb_connection_t *conn;
 static xcb_ewmh_connection_t *ewmh;
 static xcb_screen_t *scr;
@@ -84,6 +79,11 @@ static client_t *marker = NULL;
 static int curws = 0,
            x = 0,
            y = 0;
+
+static keybind_t *keys = NULL;
+static int keys_len,
+           keys_max;
+static char *path;
 
 static void close(int arg);
 static void cycle(int arg);
@@ -179,7 +179,6 @@ static func_map_t func_map[] = {
 	{ "read_config",    read_config    },
 };
 
-
 static attr_map_t attr_map[] = {
 	{ "padding_top",    0        },
 	{ "padding_bottom", 0        },
@@ -273,6 +272,7 @@ static void grab_keys() {
 	if (keysyms) xcb_key_symbols_free(keysyms);
 	keysyms = xcb_key_symbols_alloc(conn);
 	xcb_keycode_t *keycode;
+
 	for (int i = 0; i < keys_len; i++) {
 		keycode = xcb_key_symbols_get_keycode(keysyms, keys[i].key);
 		xcb_grab_key(conn, 0, scr->root, keys[i].mod, *keycode, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC);
@@ -288,6 +288,7 @@ static void focus(client_t *subj) {
 }
 
 static void raise(client_t *subj) {
+	if (subj == stack[curws]) return;
 	insert(curws, excise(curws, subj));
 	xcb_configure_window(conn, subj->id, XCB_CONFIG_WINDOW_STACK_MODE, (uint32_t[]){ XCB_STACK_MODE_ABOVE });
 }
@@ -307,6 +308,8 @@ static void die() {
 			free(temp);
 		}
 	}
+	xcb_ungrab_key(conn, XCB_GRAB_ANY, scr->root, XCB_MOD_MASK_ANY);
+	free(keys);
 	xcb_key_symbols_free(keysyms);
 	xcb_disconnect(conn);
 }
@@ -402,7 +405,10 @@ static void snap_restore_state(client_t *subj) {
 	if (!fwin[curws] || fwin[curws]->e_full || fwin[curws]->i_full) return; \
 	if (!fwin[curws]->snap) snap_save_state(fwin[curws]); \
 	xcb_configure_window(conn, fwin[curws]->id, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT, (uint32_t[]){ B, C, D, E}); \
-	if (!moving) center_pointer(fwin[curws]); \
+	if (!moving) { \
+		center_pointer(fwin[curws]); \
+		raise(fwin[curws]); \
+	} \
 }
 
 SNAP_TEMPLATE(snap_max, attr_map[GAP].val, attr_map[GAP].val + attr_map[PADDING_TOP].val, scr->width_in_pixels - 2 * attr_map[GAP].val - 2 * attr_map[BORDER_WIDTH].val, scr->height_in_pixels - 2 * attr_map[GAP].val - 2 * attr_map[BORDER_WIDTH].val - attr_map[PADDING_TOP].val - attr_map[PADDING_BOTTOM].val)
@@ -414,6 +420,7 @@ SNAP_TEMPLATE(snap_uright, scr->width_in_pixels / 2 + attr_map[GAP].val / 2, att
 SNAP_TEMPLATE(snap_dright, scr->width_in_pixels / 2 + attr_map[GAP].val / 2, (scr->height_in_pixels - attr_map[PADDING_TOP].val - attr_map[PADDING_BOTTOM].val) / 2 + attr_map[GAP].val / 2 + attr_map[PADDING_TOP].val, scr->width_in_pixels / 2 - 1.5 * attr_map[GAP].val - attr_map[BORDER_WIDTH].val * 2, (scr->height_in_pixels - attr_map[PADDING_TOP].val - attr_map[PADDING_BOTTOM].val) / 2 - 1.5 * attr_map[GAP].val - 2 * attr_map[BORDER_WIDTH].val)
 
 static void full_save_state(client_t *subj) {
+	raise(subj);
 	xcb_get_geometry_reply_t *temp = xcb_get_geometry_reply(conn, xcb_get_geometry(conn, subj->id), NULL);
 	subj->full_geom.x = temp->x;
 	subj->full_geom.y = temp->y;
@@ -451,10 +458,10 @@ static void ext_fullscreen(client_t *subj) {
 static void map_request(xcb_generic_event_t *ev) {
 	xcb_map_request_event_t *e = (xcb_map_request_event_t *)ev;
 	if (wtf(e->window, NULL)) return;
-	
-	xcb_map_window(conn, e->window);
-		
+
 	xcb_get_geometry_reply_t *init_geom = xcb_get_geometry_reply(conn, xcb_get_geometry_unchecked(conn, e->window), NULL);
+
+	xcb_map_window(conn, e->window);
 
 	xcb_ewmh_get_atoms_reply_t type;
 	if (xcb_ewmh_get_wm_window_type_reply(ewmh, xcb_ewmh_get_wm_window_type(ewmh, e->window), &type, NULL)) {
@@ -467,11 +474,19 @@ static void map_request(xcb_generic_event_t *ev) {
 	}
 
 	xcb_query_pointer_reply_t *ptr = xcb_query_pointer_reply(conn, xcb_query_pointer(conn, scr->root), NULL);
-	
-	xcb_change_window_attributes(conn, e->window, XCB_CW_BORDER_PIXEL | XCB_CW_EVENT_MASK, (uint32_t[]){ attr_map[NORMAL_COLOR].val, XCB_EVENT_MASK_ENTER_WINDOW });
-	xcb_configure_window(conn, e->window, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_BORDER_WIDTH, (uint32_t[]){ ptr->root_x - init_geom->width / 2, ptr->root_y - init_geom->height / 2, attr_map[BORDER_WIDTH].val });
 
+	uint32_t vals[] = { 0, 0, attr_map[BORDER_WIDTH].val };
+	if (ptr->root_x < init_geom->width / 2 + attr_map[BORDER_WIDTH].val) vals[0] = 0; 
+	else if (ptr->root_x + init_geom->width / 2 + attr_map[BORDER_WIDTH].val > scr->width_in_pixels) vals[0] = scr->width_in_pixels - init_geom->width - 2 * attr_map[BORDER_WIDTH].val;
+	else vals[0] = ptr->root_x - init_geom->width / 2 - attr_map[BORDER_WIDTH].val;
+	if (ptr->root_y < init_geom->height / 2 + attr_map[BORDER_WIDTH].val) vals[1] = 0;
+	else if (ptr->root_y + init_geom->height / 2 + attr_map[BORDER_WIDTH].val > scr->height_in_pixels) vals[1] = scr->height_in_pixels - init_geom->height - 2 * attr_map[BORDER_WIDTH].val;
+	else vals[1] = ptr->root_y - init_geom->height / 2 - attr_map[BORDER_WIDTH].val;
+
+	xcb_change_window_attributes(conn, e->window, XCB_CW_BORDER_PIXEL | XCB_CW_EVENT_MASK, (uint32_t[]){ attr_map[NORMAL_COLOR].val, XCB_EVENT_MASK_ENTER_WINDOW });
+	xcb_configure_window(conn, e->window, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_BORDER_WIDTH, vals);
 	free(ptr);
+
 	free(init_geom);
 
 	client_t *new = malloc(sizeof(client_t));
@@ -482,10 +497,7 @@ static void map_request(xcb_generic_event_t *ev) {
 	new->i_full = false;
 	insert(curws, new);
 	
-	if (!tabbing && !moving && !resizing) {
-		focus(new);
-		center_pointer(new);
-	}
+	if (!tabbing && !moving && !resizing) focus(new);
 }
 
 static void enter_notify(xcb_generic_event_t *ev) {
@@ -501,7 +513,7 @@ static void button_press(xcb_generic_event_t *ev) {
 	if (!found) return;
 	
 	if (found != fwin[curws]) focus(found);
-	if (found != stack[curws]) raise(found);
+	raise(found);
 	if (found->e_full || found->i_full) return;
 
 	xcb_get_geometry_reply_t *geom = xcb_get_geometry_reply(conn, xcb_get_geometry(conn, fwin[curws]->id), NULL);
@@ -848,7 +860,7 @@ int main(int argc, char **argv) {
 	const char *NET_ATOM_NAME[] = { "_NET_SUPPORTED", "_NET_WM_STATE_FULLSCREEN", "_NET_WM_STATE" };
 	get_atoms(NET_ATOM_NAME, net_atoms, NET_COUNT);
 	xcb_change_property(conn, XCB_PROP_MODE_REPLACE, scr->root, net_atoms[NET_SUPPORTED], XCB_ATOM_ATOM, 32, NET_COUNT, net_atoms);
-	
+
 	read_config(0);
 
 	xcb_grab_button(conn, 0, scr->root, XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC, scr->root, XCB_NONE, XCB_BUTTON_INDEX_1, XCB_MOD_MASK_4);

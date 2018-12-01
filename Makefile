@@ -9,7 +9,7 @@ all: araiwm
 	$(CC) -I/usr/X11R6/include -c  $<
 
 araiwm: $(OBJ)
-	$(CC) -o $@ $(OBJ) -I/usr/X11R6/include -L/usr/X11R6/lib -lxcb -lxcb-keysyms -lxcb-ewmh -lxcb-icccm
+	$(CC) -o $@ $(OBJ) -O3 -I/usr/X11R6/include -L/usr/X11R6/lib -lxcb -lxcb-keysyms -lxcb-ewmh -lxcb-icccm
 
 install:
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
