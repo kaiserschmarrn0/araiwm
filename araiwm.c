@@ -1,6 +1,6 @@
 #include <stdlib.h>
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <xcb/xcb.h>
 #include <xcb/xcb_ewmh.h>
@@ -8,25 +8,11 @@
 #include <xcb/xcb_keysyms.h>
 #include <X11/keysym.h>
 
+#include "config.h"
+
 #define LEN(A) sizeof(A)/sizeof(*A)
 
 #define LOG(A) printf("araiwm: " A ".\n");
-
-#define MOD XCB_MOD_MASK_4
-#define SHIFT XCB_MOD_MASK_SHIFT
-
-#define NUM_WS 4
-
-#define TOP 0
-#define BOT 32
-#define GAP 0
-#define BORDER 6
-
-#define FOCUSCOL 0x81a1c1
-#define UNFOCUSCOL 0x3b4252 
-
-#define SNAP_MARGIN 5
-#define SNAP_CORNER 256
 
 enum { DEFAULT, MOVE, RESIZE, CYCLE, };
 enum { WM_PROTOCOLS, WM_DELETE_WINDOW, WM_COUNT, };
@@ -48,21 +34,6 @@ typedef struct window {
 	int ignore_unmap;
 } window;
 
-typedef struct {
-	uint16_t mod;
-	xcb_keysym_t key;
-
-	void (*function) (int arg);
-	int arg;
-} keybind;
-
-typedef struct {
-	uint16_t mod;
-	uint32_t button;
-
-	void (*function) (xcb_window_t win, uint32_t event_x, uint32_t event_y);
-} button;
-
 static xcb_connection_t *conn;
 static xcb_ewmh_connection_t *ewmh;
 static xcb_screen_t *scr;
@@ -75,10 +46,6 @@ static xcb_key_symbols_t *keysyms = NULL;
 static window *stack[NUM_WS] = { NULL };
 static window *fwin[NUM_WS] = { NULL };
 
-/*static int moving = 0;
-static int resizing = 0;
-static int tabbing = 0;*/
-
 static unsigned int state = DEFAULT;
 
 static window *marker = NULL;
@@ -86,47 +53,6 @@ static window *marker = NULL;
 static int curws = 0;
 static uint32_t x = 0;
 static uint32_t y = 0;
-
-static void close(int arg);
-static void cycle(int arg);
-
-static void snap_l(int arg);
-static void snap_lu(int arg);
-static void snap_ld(int arg);
-static void snap_r(int arg);
-static void snap_ru(int arg);
-static void snap_rd(int arg);
-static void snap_max(int arg);
-
-static void int_full(int arg);
-
-static void change_ws(int arg);
-static void send_ws(int arg);
-
-static const keybind keys[] = {
-	{ MOD,         XK_q,     close,     0 },
-	{ MOD,         XK_Tab,   cycle,     0 },
-	{ MOD,         XK_Left,  snap_l,    0 },
-	{ MOD,         XK_Right, snap_r,    0 },
-	{ MOD,         XK_f,     snap_max,  0 },
-	{ MOD | SHIFT, XK_f,     int_full,  0 },
-	{ MOD,         XK_1,     change_ws, 0 },
-	{ MOD,         XK_2,     change_ws, 1 },
-	{ MOD,         XK_3,     change_ws, 2 },
-	{ MOD,         XK_4,     change_ws, 3 },
-	{ MOD | SHIFT, XK_1,     send_ws,   0 },
-	{ MOD | SHIFT, XK_2,     send_ws,   1 },
-	{ MOD | SHIFT, XK_3,     send_ws,   2 },
-	{ MOD | SHIFT, XK_4,     send_ws,   3 },
-};
-
-static void mouse_move(xcb_window_t win, uint32_t event_x, uint32_t event_y);
-static void mouse_resize(xcb_window_t win, uint32_t event_x, uint32_t event_y);
-
-static const button buttons[] = {
-	{ MOD, XCB_BUTTON_INDEX_1, mouse_move   },
-	{ MOD, XCB_BUTTON_INDEX_3, mouse_resize },
-};
 
 static void insert(int ws, window *subj) {
 	subj->next = stack[ws];
@@ -155,20 +81,25 @@ static window *excise(int ws, window *subj) {
 
 static window *ws_wtf(xcb_window_t id, int ws) {
 	window *cur;
-	for (cur = stack[ws]; cur && cur->child != id; cur = cur->next);
-
+	for (cur = stack[ws]; cur; cur = cur->next) {
+		if (cur->child == id) {
+			break;
+		}
+	}
 	return cur;
 }
 
 static window *all_wtf(xcb_window_t id, int *ws) {
 	window *ret;
-	int i;
-	for (i = 0; i < NUM_WS && !(ret = ws_wtf(id, i)); i++);
-
-	if (ws) {
-		*ws = i;
+	for (int i = 0; i < NUM_WS; i++) {
+		ret = ws_wtf(id, i);
+		if (ret) {
+			if (ws) {
+				*ws = i;
+			}
+			break;
+		}
 	}
-
 	return ret;
 }
 
@@ -364,8 +295,6 @@ static void stop_cycle() {
 }
 
 static void cycle(int arg) {
-	LOG("whoops...");
-
 	if (!stack[curws] || !stack[curws]->next) {
 		return;
 	}
@@ -435,23 +364,23 @@ static void snap_restore_state(window *win) {
 	win->is_snap = 0;
 }
 
-#define SNAP_TEMPLATE(A, B, C, D, E) static void A(int arg) {			\
-	if (!fwin[curws] || fwin[curws]->is_e_full || fwin[curws]->is_i_full) {	\
-		return;								\
-	}									\
-										\
-	if (!fwin[curws]->is_snap) {						\
-		snap_save_state(fwin[curws]);					\
-	}									\
-										\
-	move_resize(fwin[curws]->child, B, C, D, E);				\
-										\
-	if (state == MOVE) {								\
-		return;								\
-	}									\
-										\
-	center_pointer(fwin[curws]);						\
-	raise(fwin[curws]);							\
+#define SNAP_TEMPLATE(A, B, C, D, E) static void A(int arg) {                   \
+	if (!fwin[curws] || fwin[curws]->is_e_full || fwin[curws]->is_i_full) { \
+		return;                                                         \
+	}                                                                       \
+	                                                                        \
+	if (!fwin[curws]->is_snap) {                                            \
+		snap_save_state(fwin[curws]);                                   \
+	}                                                                       \
+	                                                                        \
+	move_resize(fwin[curws]->child, B, C, D, E);                            \
+	                                                                        \
+	if (state == MOVE) {                                                    \
+		return;                                                         \
+	}                                                                       \
+	                                                                        \
+	center_pointer(fwin[curws]);                                            \
+	raise(fwin[curws]);                                                     \
 }
 
 SNAP_TEMPLATE(snap_max,
@@ -770,9 +699,9 @@ static void forget_client(window *subj, int ws) {
 	if ((state == MOVE || state == RESIZE) && subj == fwin[curws]) {
 		button_release(NULL);
 	}
-	
-	free(excise(ws, subj));
 
+	free(excise(ws, subj));
+	
 	if (ws != curws || fwin[curws] != subj) {
 		return;
 	}
@@ -787,7 +716,6 @@ static void forget_client(window *subj, int ws) {
 static void unmap_notify(xcb_generic_event_t *ev) {
 	xcb_unmap_notify_event_t *e = (xcb_unmap_notify_event_t *)ev;
 
-	int ws;
 	window *found = ws_wtf(e->window, curws);
 	if (!found) {
 		return;
@@ -796,7 +724,7 @@ static void unmap_notify(xcb_generic_event_t *ev) {
 	if (found->ignore_unmap) {
 		found->ignore_unmap = 0;
 	} else {
-		forget_client(found, ws);
+		forget_client(found, curws);
 	}
 }
 
@@ -821,18 +749,19 @@ static void client_message(xcb_generic_event_t *ev) {
 
 	for (int i = 1; i < 3; i++) {
 		xcb_atom_t atom = (xcb_atom_t)e->data.data32[i];
-		switch ((atom == ewmh->_NET_WM_STATE_FULLSCREEN) *
-				(2 * e->data.data32[0] + found->is_e_full)) {
-			case 2 * XCB_EWMH_WM_STATE_ADD:
-				ext_full(found);
-				break;
-			case 2 * XCB_EWMH_WM_STATE_REMOVE + 1:
-				ext_full(found);
-				break;
-			case 2 * XCB_EWMH_WM_STATE_TOGGLE:
-				/* FALLTHROUGH */
-			case 2 * XCB_EWMH_WM_STATE_TOGGLE + 1:
-				ext_full(found);
+		if (atom == ewmh->_NET_WM_STATE_FULLSCREEN) {
+			switch (2 * e->data.data32[0] + found->is_e_full) {
+				case 2 * XCB_EWMH_WM_STATE_ADD:
+					ext_full(found);
+					break;
+				case 2 * XCB_EWMH_WM_STATE_REMOVE + 1:
+					ext_full(found);
+					break;
+				case 2 * XCB_EWMH_WM_STATE_TOGGLE:
+					/* FALLTHROUGH */
+				case 2 * XCB_EWMH_WM_STATE_TOGGLE + 1:
+					ext_full(found);
+			}
 		}
 	}
 }
@@ -847,7 +776,7 @@ static void mapping_notify(xcb_generic_event_t *ev) {
 	grab_keys();
 }
 
-#define check_mask(A, B, C, D, E) \
+#define CHECK_MASK(A, B, C, D, E) \
 	if (D & E) {              \
 		A[B++] = C;       \
 	}
@@ -855,10 +784,10 @@ static void mapping_notify(xcb_generic_event_t *ev) {
 static int mask_to_geo(xcb_configure_request_event_t *e, uint32_t *vals) {
 	int i = 0;
 
-	check_mask(vals, i, e->x, e->value_mask, XCB_CONFIG_WINDOW_X)
-	check_mask(vals, i, e->y, e->value_mask, XCB_CONFIG_WINDOW_X)
-	check_mask(vals, i, e->width, e->value_mask, XCB_CONFIG_WINDOW_WIDTH)
-	check_mask(vals, i, e->height, e->value_mask, XCB_CONFIG_WINDOW_X)
+	CHECK_MASK(vals, i, e->x, e->value_mask, XCB_CONFIG_WINDOW_X)
+	CHECK_MASK(vals, i, e->y, e->value_mask, XCB_CONFIG_WINDOW_X)
+	CHECK_MASK(vals, i, e->width, e->value_mask, XCB_CONFIG_WINDOW_WIDTH)
+	CHECK_MASK(vals, i, e->height, e->value_mask, XCB_CONFIG_WINDOW_X)
 
 	return i;
 }
@@ -872,13 +801,14 @@ static void configure_request(xcb_generic_event_t *ev) {
 	if (!found) {
 		int i = mask_to_geo(e, vals);
 
-		check_mask(vals, i, e->sibling, e->value_mask, XCB_CONFIG_WINDOW_SIBLING)
-		check_mask(vals, i, e->stack_mode, e->value_mask, XCB_CONFIG_WINDOW_STACK_MODE)
+		CHECK_MASK(vals, i, e->sibling, e->value_mask, XCB_CONFIG_WINDOW_SIBLING)
+		CHECK_MASK(vals, i, e->stack_mode, e->value_mask, XCB_CONFIG_WINDOW_STACK_MODE)
 
 		xcb_configure_window(conn, e->window, e->value_mask, vals);
 	} else if (!found->is_i_full && !found->is_e_full) {
 		mask_to_geo(e, vals);
-		xcb_configure_window(conn, found->child, e->value_mask & ~(XCB_CONFIG_WINDOW_STACK_MODE | XCB_CONFIG_WINDOW_SIBLING), vals);
+		uint32_t ignore = XCB_CONFIG_WINDOW_STACK_MODE | XCB_CONFIG_WINDOW_SIBLING;
+		xcb_configure_window(conn, found->child, e->value_mask & ~ignore, vals);
 	}
 }
 
