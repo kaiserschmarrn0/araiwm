@@ -11,7 +11,7 @@ all: araiwm
 araiwm: $(OBJ)
 	$(CC) -o $@ $(OBJ) -O3 -I/usr/X11R6/include -L/usr/X11R6/lib -lxcb -lxcb-keysyms -lxcb-ewmh -lxcb-icccm
 
-install:
+install: araiwm
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
 	cp -f araiwm $(DESTDIR)$(PREFIX)/bin
 	chmod 755 $(DESTDIR)$(PREFIX)/bin/araiwm
