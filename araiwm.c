@@ -161,8 +161,6 @@ static xcb_query_pointer_reply_t *w_query_pointer() {
 	return xcb_query_pointer_reply(conn, cookie, NULL);
 }
 
-
-
 static void traverse(window *list, void (*func)(window *)) {
 	for (; list;) {
 		window *temp = list;
@@ -383,11 +381,20 @@ static void snap_restore_state(window *win) {
 	raise(fwin[curws]);                                                     \
 }
 
+#ifndef SNAP_MAX_SMART
 SNAP_TEMPLATE(snap_max,
 	GAP,
 	GAP + TOP,
 	scr->width_in_pixels - 2 * GAP - 2 * BORDER,
 	scr->height_in_pixels - 2 * GAP - 2 * BORDER - TOP - BOT)
+#endif
+#ifdef SNAP_MAX_SMART 
+SNAP_TEMPLATE(snap_max,
+	0,
+	TOP,
+	scr->width_in_pixels - 2 * BORDER,
+	scr->height_in_pixels - 2 * BORDER - TOP - BOT)
+#endif
 
 SNAP_TEMPLATE(snap_l,
 	GAP,
@@ -494,7 +501,6 @@ static void map_request(xcb_generic_event_t *ev) {
 		return;
 	}
 
-	xcb_map_window(conn, e->window);
 	
 	xcb_get_property_cookie_t cookie = xcb_ewmh_get_wm_window_type(ewmh, e->window);
 	xcb_ewmh_get_atoms_reply_t type;
@@ -504,6 +510,7 @@ static void map_request(xcb_generic_event_t *ev) {
 					|| type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_TOOLBAR
 					|| type.atoms[i] == ewmh->_NET_WM_WINDOW_TYPE_DESKTOP) {
 				xcb_ewmh_get_atoms_reply_wipe(&type);
+				xcb_map_window(conn, e->window);
 				return;
 			}
 		}
@@ -532,6 +539,8 @@ static void map_request(xcb_generic_event_t *ev) {
 	color(win->child, UNFOCUSCOL);
 
 	normal_events(win);
+	
+	xcb_map_window(conn, e->window);
 	
 	insert(curws, win);
 	if (!state) {

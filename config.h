@@ -4,9 +4,9 @@
 
 #define NUM_WS 4
 
-#define TOP 0
-#define BOT 32
-#define GAP 0
+#define TOP 34
+#define BOT 0
+#define GAP 10
 #define BORDER 0
 
 #define FOCUSCOL 0x81a1c1
@@ -14,6 +14,9 @@
 
 #define SNAP_MARGIN 5
 #define SNAP_CORNER 256
+
+//ignore gaps when maxed
+#define SNAP_MAX_SMART
 
 /* keyboard modifiers */
 
