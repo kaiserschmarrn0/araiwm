@@ -135,7 +135,7 @@ static void move_resize(xcb_window_t win, int x, int y, int w, int h) {
 	xcb_configure_window(conn, win, mask, vals);
 }
 
-static void move(xcb_window_t win, int x, int y) {
+static void move(xcb_window_t win, uint32_t x, uint32_t y) {
 	uint32_t mask = XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y;
 	uint32_t vals[2];
 	vals[0] = x;
@@ -319,14 +319,15 @@ static void change_ws(int arg) {
 	if (arg == curws) {
 		return;
 	}
-
+	
 	traverse(stack[arg], map);
 	traverse(stack[curws], ignore_unmap); 
 	
-	curws = arg;
 	if (fwin[arg]) {
 		focus(fwin[arg]);
 	}
+	
+	curws = arg;
 }
 
 static void send_ws(int arg) {
@@ -485,7 +486,11 @@ static void ext_full(window *subj) {
 	full(fwin[curws]);	
 }
 
-static int place_helper(uint32_t ptr_pos, uint32_t win_sze, uint32_t scr_sze) {
+static uint32_t size_helper(uint32_t win_sze, uint32_t scr_sze) {
+	return win_sze > scr_sze ? scr_sze : win_sze;
+}
+
+static uint32_t place_helper(uint32_t ptr_pos, uint32_t win_sze, uint32_t scr_sze) {
 	if (ptr_pos < win_sze / 2 + BORDER) {
 		return 0;
 	} else if (ptr_pos + win_sze / 2 + BORDER > scr_sze) {
@@ -500,7 +505,6 @@ static void map_request(xcb_generic_event_t *ev) {
 	if (all_wtf(e->window, NULL)) {
 		return;
 	}
-
 	
 	xcb_get_property_cookie_t cookie = xcb_ewmh_get_wm_window_type(ewmh, e->window);
 	xcb_ewmh_get_atoms_reply_t type;
@@ -525,10 +529,17 @@ static void map_request(xcb_generic_event_t *ev) {
 	win->is_i_full = 0;
 
 	xcb_get_geometry_reply_t *init_geom = w_get_geometry(win->child);
+
+	if (init_geom->height > scr->height_in_pixels) {
+
+	}
+
 	xcb_query_pointer_reply_t *ptr = w_query_pointer();
-	int x = place_helper(ptr->root_x, init_geom->width, scr->width_in_pixels);
-	int y = place_helper(ptr->root_y, init_geom->height, scr->height_in_pixels);
-	move(win->child, x, y);
+	uint32_t w = size_helper(init_geom->width, scr->width_in_pixels);
+	uint32_t h = size_helper(init_geom->height, scr->height_in_pixels);
+	uint32_t x = place_helper(ptr->root_x, w, scr->width_in_pixels);
+	uint32_t y = place_helper(ptr->root_y, h, scr->height_in_pixels);
+	move_resize(win->child, x, y, w, h);
 	free(ptr);
 	free(init_geom);
 
@@ -872,6 +883,8 @@ int main(void) {
 		xcb_grab_button(conn, 0, scr->root, mask, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC,
 				scr->root, XCB_NONE, buttons[i].button, buttons[i].mod);
 	}
+
+	grab_keys();
 	
 	void (*events[XCB_NO_OPERATION])(xcb_generic_event_t *event);
 
